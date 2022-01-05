@@ -50,3 +50,7 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# external assets to project (todo find a better way to do them all)
+q2_include/
+q2_lib/
