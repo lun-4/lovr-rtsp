@@ -41,7 +41,8 @@ endif()
 
 # desktop: use ffmpeg provided by system
 if(UNIX AND NOT ANDROID)
-target_link_libraries(funny libavformat libavutil libavcodec libswresample libswscale)
+include_directories(/usr/include/lua5.1)
+target_link_libraries(funny avformat avutil avcodec swresample swscale)
 endif()
 
 set_target_properties(funny PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
