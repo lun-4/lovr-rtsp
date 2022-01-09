@@ -4,11 +4,11 @@ project(rtsp)
 add_library(funny MODULE 
 funny.c
 )
+set_target_properties(funny PROPERTIES PREFIX "")
 
 # android: use prebuilt .so from allonet project
 # TODO maybe an automated way to get the .so's?
 if(ANDROID)
-set_target_properties(funny PROPERTIES PREFIX "")
 set(RELATIVE_PREFIX "plugins/lovr-rtsp")
 set(RTSP_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/${RELATIVE_PREFIX}")
 set(LIBAV_LIB_PATH "${rtsp_SOURCE_DIR}/q2_lib")
