@@ -1,14 +1,19 @@
 cmake_minimum_required(VERSION 3.1.0)
 project(rtsp)
 
-add_library(funny MODULE 
-funny.c
+add_library(funny MODULE
+src/funny.c
 )
 set_target_properties(funny PROPERTIES PREFIX "")
 
 # android: use prebuilt .so from allonet project
 # TODO maybe an automated way to get the .so's?
 if(ANDROID)
+add_custom_command(
+  TARGET funny PRE_BUILD
+  COMMAND zig build -Dandroid=true
+)
+
 set(RELATIVE_PREFIX "plugins/lovr-rtsp")
 set(RTSP_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/${RELATIVE_PREFIX}")
 set(LIBAV_LIB_PATH "${rtsp_SOURCE_DIR}/q2_lib")
@@ -35,14 +40,18 @@ set_target_properties(libswscale PROPERTIES
 )
 
 set(LOVR_PLUGIN_TARGETS funny libavformat libavutil libavcodec libswresample libswscale)
-include_directories(./q2_include)
-target_link_libraries(funny libavformat libavutil libavcodec libswresample libswscale)
+# include_directories(./q2_include)
+# target_link_libraries(funny libavformat libavutil libavcodec libswresample libswscale)
 endif()
 
 # desktop: use ffmpeg provided by system
 if(UNIX AND NOT ANDROID)
-include_directories(/usr/include/lua5.1)
-target_link_libraries(funny avformat avutil avcodec swresample swscale)
+add_custom_command(
+  TARGET myExe PRE_BUILD
+  COMMAND zig build -Dandroid=false
+)
+#include_directories(/usr/include/lua5.1)
+#target_link_libraries(funny avformat avutil avcodec swresample swscale)
 endif()
 
 set_target_properties(funny PROPERTIES POSITION_INDEPENDENT_CODE TRUE)

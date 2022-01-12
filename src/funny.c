@@ -12,6 +12,8 @@
 #include <libavformat/avio.h>
 #include <libswscale/swscale.h>
 
+extern void funny_function_call(void);
+
 struct funny_stream_loop_context {
   AVPacket packet;
   AVFormatContext *oc;
@@ -214,6 +216,7 @@ static const luaL_Reg syslib[] = {
 };
 
 LUALIB_API int luaopen_funny(lua_State *L) {
+  funny_function_call();
   avformat_network_init();
   luaL_newmetatable(L, "funny_stream");
   luaL_register(L, LUA_OSLIBNAME, syslib);
