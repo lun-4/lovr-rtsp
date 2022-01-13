@@ -12,8 +12,6 @@
 #include <libavformat/avio.h>
 #include <libswscale/swscale.h>
 
-extern void funny_function_call(void);
-
 struct funny_stream_loop_context {
   AVPacket packet;
   AVFormatContext *oc;
@@ -40,7 +38,7 @@ struct funny_stream {
 
 typedef struct funny_stream funny_stream_t;
 
-static int funny_open(lua_State *L) {
+extern int funny_open_old(lua_State *L) {
   size_t rtsp_url_len;
   const char *rtsp_url = luaL_checklstring(L, 1, &rtsp_url_len);
 
@@ -122,7 +120,7 @@ static int funny_open(lua_State *L) {
   return 1;
 }
 
-static int funny_clean(lua_State *L) {
+static int funny_clean_old(lua_State *L) {
   const void *funny_stream = luaL_checkudata(L, 1, "funny_stream");
   // av_free(funny_stream->loop_ctx.pic);
   // av_free(funny_stream->loop_ctx.picture_buf);
@@ -132,7 +130,7 @@ static int funny_clean(lua_State *L) {
   // avformat_free_context(oc);
 }
 
-static int funny_fetch_frame(lua_State *L) {
+extern int funny_fetch_frameold(lua_State *L) {
   struct timespec begin, end;
   clock_gettime(CLOCK_MONOTONIC, &begin);
 
@@ -206,19 +204,5 @@ static int funny_fetch_frame(lua_State *L) {
   double elapsed = seconds + nanoseconds * 1e-9;
 
   lua_pushnumber(L, elapsed);
-  return 1;
-}
-
-static const luaL_Reg syslib[] = {
-    {"open", funny_open},
-    {"fetchFrame", funny_fetch_frame},
-    {NULL, NULL},
-};
-
-LUALIB_API int luaopen_funny(lua_State *L) {
-  funny_function_call();
-  avformat_network_init();
-  luaL_newmetatable(L, "funny_stream");
-  luaL_register(L, LUA_OSLIBNAME, syslib);
   return 1;
 }
