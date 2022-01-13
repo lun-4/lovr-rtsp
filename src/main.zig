@@ -80,9 +80,20 @@ export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
         const tmp = funny_stream_1.*.video_stream_index;
         if (tmp >= 0) break :blk funny_stream_1.context.?.streams + @intCast(usize, tmp) else break :blk funny_stream_1.context.?.streams - ~@bitCast(usize, @intCast(isize, tmp) +% -1);
     }).*.*.codec);
-    if (c.avcodec_open2(funny_stream_1.*.ccontext, funny_stream_1.*.loop_ctx.codec, null) < @as(c_int, 0)) {
-        c.lua_pushstring(L, "c.avcodec_open fail");
-        _ = c.lua_error(L);
+
+    {
+        var m = std.Thread.Mutex{};
+        m.lock();
+        defer m.unlock();
+
+        if (c.avcodec_open2(
+            funny_stream_1.*.ccontext,
+            funny_stream_1.*.loop_ctx.codec,
+            null,
+        ) < @as(c_int, 0)) {
+            c.lua_pushstring(L, "c.avcodec_open fail");
+            _ = c.lua_error(L);
+        }
     }
     funny_stream_1.*.img_convert_ctx = c.sws_getContext(
         funny_stream_1.*.ccontext.*.width,
