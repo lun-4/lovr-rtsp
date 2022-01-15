@@ -19,7 +19,7 @@ const c = @cImport({
 pub const funny_stream_loop_t = extern struct {
     packet: c.AVPacket,
     oc: *c.AVFormatContext,
-    stream: *c.AVStream,
+    stream: ?*c.AVStream,
     codec: *c.AVCodec,
     size: c_int,
     picture_buf: [*c]u8,
@@ -37,6 +37,9 @@ pub const funny_stream_t = extern struct {
     loop_ctx: funny_stream_loop_t,
 };
 
+// global funny_open mutex
+var open_mutex = std.Thread.Mutex{};
+
 export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
     var L = arg_L;
     var rtsp_url_len: usize = undefined;
@@ -45,6 +48,10 @@ export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
         *funny_stream_t,
         @alignCast(std.meta.alignment(funny_stream_t), c.lua_newuserdata(L, @sizeOf(funny_stream_t)).?),
     );
+
+    open_mutex.lock();
+    defer open_mutex.unlock();
+
     _ = c.lua_getfield(L, -@as(c_int, 10000), "funny_stream");
     _ = c.lua_setmetatable(L, -@as(c_int, 2));
     funny_stream_1.context = c.avformat_alloc_context();
@@ -81,19 +88,13 @@ export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
         if (tmp >= 0) break :blk funny_stream_1.context.?.streams + @intCast(usize, tmp) else break :blk funny_stream_1.context.?.streams - ~@bitCast(usize, @intCast(isize, tmp) +% -1);
     }).*.*.codec);
 
-    {
-        var m = std.Thread.Mutex{};
-        m.lock();
-        defer m.unlock();
-
-        if (c.avcodec_open2(
-            funny_stream_1.*.ccontext,
-            funny_stream_1.*.loop_ctx.codec,
-            null,
-        ) < @as(c_int, 0)) {
-            c.lua_pushstring(L, "c.avcodec_open fail");
-            _ = c.lua_error(L);
-        }
+    if (c.avcodec_open2(
+        funny_stream_1.*.ccontext,
+        funny_stream_1.*.loop_ctx.codec,
+        null,
+    ) < @as(c_int, 0)) {
+        c.lua_pushstring(L, "c.avcodec_open fail");
+        _ = c.lua_error(L);
     }
     funny_stream_1.*.img_convert_ctx = c.sws_getContext(
         funny_stream_1.*.ccontext.*.width,
@@ -130,6 +131,9 @@ export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
 }
 
 export fn funny_fetch_frame(arg_L: ?*c.lua_State) callconv(.C) c_int {
+    open_mutex.lock();
+    defer open_mutex.unlock();
+
     var L = arg_L;
     var begin: c.timespec = undefined;
     var end: c.timespec = undefined;
@@ -147,23 +151,23 @@ export fn funny_fetch_frame(arg_L: ?*c.lua_State) callconv(.C) c_int {
     }
     if (funny_stream_1.*.loop_ctx.packet.stream_index == funny_stream_1.*.video_stream_index) {
         _ = c.printf("video!\n");
-        if (funny_stream_1.*.loop_ctx.stream == @ptrCast([*c]c.AVStream, @alignCast(@import("std").meta.alignment(c.AVStream), @intToPtr(?*anyopaque, @as(c_int, 0))))) {
+        if (funny_stream_1.*.loop_ctx.stream == null) {
             _ = c.printf("creating stream\n");
             funny_stream_1.*.loop_ctx.stream = c.avformat_new_stream(funny_stream_1.*.loop_ctx.oc, (blk: {
                 const tmp = funny_stream_1.*.video_stream_index;
                 if (tmp >= 0) break :blk funny_stream_1.*.context.?.streams + @intCast(usize, tmp) else break :blk funny_stream_1.*.context.?.streams - ~@bitCast(usize, @intCast(isize, tmp) +% -1);
             }).*.*.codec.*.codec);
-            _ = c.avcodec_copy_context(funny_stream_1.*.loop_ctx.stream.*.codec, (blk: {
+            _ = c.avcodec_copy_context(funny_stream_1.*.loop_ctx.stream.?.codec, (blk: {
                 const tmp = funny_stream_1.*.video_stream_index;
                 if (tmp >= 0) break :blk funny_stream_1.*.context.?.streams + @intCast(usize, tmp) else break :blk funny_stream_1.*.context.?.streams - ~@bitCast(usize, @intCast(isize, tmp) +% -1);
             }).*.*.codec);
-            funny_stream_1.*.loop_ctx.stream.*.sample_aspect_ratio = (blk: {
+            funny_stream_1.*.loop_ctx.stream.?.sample_aspect_ratio = (blk: {
                 const tmp = funny_stream_1.*.video_stream_index;
                 if (tmp >= 0) break :blk funny_stream_1.*.context.?.streams + @intCast(usize, tmp) else break :blk funny_stream_1.*.context.?.streams - ~@bitCast(usize, @intCast(isize, tmp) +% -1);
             }).*.*.codec.*.sample_aspect_ratio;
         }
         var check: c_int = 0;
-        funny_stream_1.*.loop_ctx.packet.stream_index = funny_stream_1.*.loop_ctx.stream.*.id;
+        funny_stream_1.*.loop_ctx.packet.stream_index = funny_stream_1.*.loop_ctx.stream.?.id;
         _ = c.printf("decoding frame\n");
         var result: c_int = c.avcodec_decode_video2(funny_stream_1.*.ccontext, funny_stream_1.*.loop_ctx.pic, &check, &funny_stream_1.*.loop_ctx.packet);
         _ = c.printf("decoded %d bytes. check %d\n", result, check);
@@ -198,6 +202,9 @@ const funny_lib = [_]c.luaL_Reg{
 };
 
 export fn luaopen_funny(L: ?*c.lua_State) c_int {
+    open_mutex.lock();
+    defer open_mutex.unlock();
+
     _ = c.avformat_network_init();
     _ = c.luaL_newmetatable(L, "funny_stream");
     c.luaL_register(L, "funny", &funny_lib);
