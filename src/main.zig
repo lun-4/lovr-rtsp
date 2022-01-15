@@ -31,79 +31,104 @@ pub const funny_stream_loop_t = extern struct {
 
 pub const funny_stream_t = extern struct {
     img_convert_ctx: *c.SwsContext,
-    context: ?*c.AVFormatContext,
+    context: *c.AVFormatContext,
     ccontext: *c.AVCodecContext,
-    video_stream_index: c_int,
+    video_stream_index: usize,
     loop_ctx: funny_stream_loop_t,
 };
 
 // global funny_open mutex
 var open_mutex = std.Thread.Mutex{};
+const logger = std.log.scoped(.lovr_rtsp);
+
+fn possible_av_error(L: *c.lua_State, ret: c_int) !void {
+    if (ret < 0) {
+        c.lua_pushstring(L, "libav issue");
+        _ = c.lua_error(L);
+        return error.AvError;
+    }
+}
 
 export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
-    var L = arg_L;
+    var L = arg_L.?;
+
     var rtsp_url_len: usize = undefined;
-    var rtsp_url: [*c]const u8 = c.luaL_checklstring(L, @as(c_int, 1), &rtsp_url_len);
-    var funny_stream_1: *funny_stream_t = @ptrCast(
-        *funny_stream_t,
-        @alignCast(std.meta.alignment(funny_stream_t), c.lua_newuserdata(L, @sizeOf(funny_stream_t)).?),
-    );
+    var rtsp_url = c.luaL_checklstring(L, @as(c_int, 1), &rtsp_url_len);
+    return funny_open_wrapped(L, rtsp_url[0..rtsp_url_len :0]) catch |err| {
+        logger.err("error happened shit {s}", .{@errorName(err)});
+        if (@errorReturnTrace()) |trace| {
+            std.debug.dumpStackTrace(trace.*);
+        }
+        c.lua_pushstring(L, "error in native rtsp library");
+        _ = c.lua_error(L);
+        return 1;
+    };
+}
 
-    funny_stream_1.loop_ctx.stream = null;
-
+fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     open_mutex.lock();
     defer open_mutex.unlock();
 
-    _ = c.lua_getfield(L, -@as(c_int, 10000), "funny_stream");
-    _ = c.lua_setmetatable(L, -@as(c_int, 2));
-    funny_stream_1.context = c.avformat_alloc_context();
-    funny_stream_1.loop_ctx.codec = c.avcodec_find_decoder(@bitCast(c_uint, c.AV_CODEC_ID_H264)) orelse {
+    var context_cptr = c.avformat_alloc_context().?;
+    var context = @ptrCast(*c.AVFormatContext, context_cptr);
+
+    const codec = c.avcodec_find_decoder(@bitCast(c_uint, c.AV_CODEC_ID_H264)) orelse {
         c.lua_pushstring(L, "could not find h264 decoder");
         return c.lua_error(L);
     };
-    funny_stream_1.*.ccontext = c.avcodec_alloc_context3(funny_stream_1.*.loop_ctx.codec);
-    if (c.avformat_open_input(&funny_stream_1.*.context, rtsp_url, null, null) != @as(c_int, 0)) {
+
+    var codec_context_cptr = c.avcodec_alloc_context3(codec).?;
+    var codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+
+    if (c.avformat_open_input(&context_cptr, rtsp_url.ptr, null, null) != @as(c_int, 0)) {
         c.lua_pushstring(L, "c.avformat_open_input error");
         _ = c.lua_error(L);
+        return error.AvError;
     }
-    if (c.avformat_find_stream_info(funny_stream_1.*.context, null) < @as(c_int, 0)) {
+
+    // set it again just in case avformat_open_input changed the pointer value!!!
+    context = @ptrCast(*c.AVFormatContext, context_cptr);
+
+    if (c.avformat_find_stream_info(context, null) < 0) {
         c.lua_pushstring(L, "c.avformat_find_stream_info error");
         _ = c.lua_error(L);
+        return error.AvError;
     }
+
+    var maybe_video_stream_index: ?usize = null;
     {
-        var i: c_int = 0;
-        while (@bitCast(c_uint, i) < funny_stream_1.*.context.?.nb_streams) : (i += 1) {
-            if ((blk: {
-                const tmp = i;
-                if (tmp >= 0) break :blk funny_stream_1.*.context.?.streams + @intCast(usize, tmp) else break :blk funny_stream_1.*.context.?.streams - ~@bitCast(usize, @intCast(isize, tmp) +% -1);
-            }).*.*.codec.*.codec_type == c.AVMEDIA_TYPE_VIDEO) {
-                funny_stream_1.*.video_stream_index = i;
+        var i: usize = 0;
+        while (i < context.nb_streams) : (i += 1) {
+            if (context.streams[i].*.codec.*.codec_type == c.AVMEDIA_TYPE_VIDEO) {
+                maybe_video_stream_index = i;
             }
         }
     }
-    c.av_init_packet(&funny_stream_1.*.loop_ctx.packet);
-    funny_stream_1.*.loop_ctx.oc = c.avformat_alloc_context();
-    _ = c.av_read_play(funny_stream_1.context);
-    _ = c.avcodec_get_context_defaults3(funny_stream_1.*.ccontext, funny_stream_1.*.loop_ctx.codec);
-    _ = c.avcodec_copy_context(funny_stream_1.*.ccontext, (blk: {
-        const tmp = funny_stream_1.*.video_stream_index;
-        if (tmp >= 0) break :blk funny_stream_1.context.?.streams + @intCast(usize, tmp) else break :blk funny_stream_1.context.?.streams - ~@bitCast(usize, @intCast(isize, tmp) +% -1);
-    }).*.*.codec);
+    var video_stream_index: usize = maybe_video_stream_index.?;
 
-    if (c.avcodec_open2(
-        funny_stream_1.*.ccontext,
-        funny_stream_1.*.loop_ctx.codec,
+    var packet: c.AVPacket = undefined;
+    c.av_init_packet(&packet);
+    var inner_loop_context = c.avformat_alloc_context();
+    try possible_av_error(L, c.av_read_play(context));
+    try possible_av_error(L, c.avcodec_get_context_defaults3(codec_context_cptr, codec));
+    codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+
+    const stream_codec_context = context.streams[@intCast(usize, video_stream_index)].*.codec.?;
+    //const actual_stream_codec = stream_codec_context.*.codec.?;
+    try possible_av_error(L, c.avcodec_copy_context(codec_context_cptr, stream_codec_context));
+    codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+
+    try possible_av_error(L, c.avcodec_open2(
+        codec_context,
+        codec,
         null,
-    ) < @as(c_int, 0)) {
-        c.lua_pushstring(L, "c.avcodec_open fail");
-        _ = c.lua_error(L);
-    }
-    funny_stream_1.*.img_convert_ctx = c.sws_getContext(
-        funny_stream_1.*.ccontext.*.width,
-        funny_stream_1.*.ccontext.*.height,
-        funny_stream_1.*.ccontext.*.pix_fmt,
-        funny_stream_1.*.ccontext.*.width,
-        funny_stream_1.*.ccontext.*.height,
+    ));
+    var img_convert_ctx = c.sws_getContext(
+        codec_context.width,
+        codec_context.height,
+        codec_context.pix_fmt,
+        codec_context.width,
+        codec_context.height,
         c.AV_PIX_FMT_RGB24,
         @as(c_int, 4),
         null,
@@ -114,20 +139,71 @@ export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
         return c.lua_error(L);
     };
 
-    funny_stream_1.*.loop_ctx.size = c.avpicture_get_size(c.AV_PIX_FMT_YUV420P, funny_stream_1.*.ccontext.*.width, funny_stream_1.*.ccontext.*.height);
-    funny_stream_1.*.loop_ctx.picture_buf = @ptrCast([*c]u8, @alignCast(@import("std").meta.alignment(u8), c.av_malloc(@bitCast(usize, @as(c_long, funny_stream_1.*.loop_ctx.size)))));
-    funny_stream_1.*.loop_ctx.pic = c.av_frame_alloc();
-    _ = c.avpicture_fill(@ptrCast([*c]c.AVPicture, @alignCast(@import("std").meta.alignment(c.AVPicture), funny_stream_1.*.loop_ctx.pic)), funny_stream_1.*.loop_ctx.picture_buf, c.AV_PIX_FMT_YUV420P, funny_stream_1.*.ccontext.*.width, funny_stream_1.*.ccontext.*.height);
-    funny_stream_1.*.loop_ctx.size2 = c.avpicture_get_size(c.AV_PIX_FMT_RGB24, funny_stream_1.*.ccontext.*.width, funny_stream_1.*.ccontext.*.height);
-    funny_stream_1.*.loop_ctx.picture_buf2 = @ptrCast([*c]u8, @alignCast(@import("std").meta.alignment(u8), c.av_malloc(@bitCast(usize, @as(c_long, funny_stream_1.*.loop_ctx.size2)))));
-    funny_stream_1.*.loop_ctx.pic_rgb = c.av_frame_alloc();
-    _ = c.avpicture_fill(
-        @ptrCast([*c]c.AVPicture, @alignCast(@import("std").meta.alignment(c.AVPicture), funny_stream_1.*.loop_ctx.pic_rgb)),
-        funny_stream_1.*.loop_ctx.picture_buf2,
-        c.AV_PIX_FMT_RGB24,
-        funny_stream_1.*.ccontext.*.width,
-        funny_stream_1.*.ccontext.*.height,
+    // pic1 contains incoming yuv data, pic2 contains rgb24 data
+
+    const pic1_size = c.avpicture_get_size(
+        c.AV_PIX_FMT_YUV420P,
+        codec_context.width,
+        codec_context.height,
     );
+    const pic1_buf = @ptrCast(
+        [*c]u8,
+        @alignCast(std.meta.alignment(u8), c.av_malloc(@bitCast(usize, @as(c_long, pic1_size)))),
+    );
+    const pic1 = c.av_frame_alloc();
+    try possible_av_error(L, c.avpicture_fill(
+        @ptrCast(*c.AVPicture, pic1),
+        pic1_buf,
+        c.AV_PIX_FMT_YUV420P,
+
+        codec_context.width,
+        codec_context.height,
+    ));
+
+    const pic2_size = c.avpicture_get_size(
+        c.AV_PIX_FMT_RGB24,
+        codec_context.width,
+        codec_context.height,
+    );
+    const pic2_buf = @ptrCast(
+        [*c]u8,
+        @alignCast(std.meta.alignment(u8), c.av_malloc(@bitCast(usize, @as(c_long, pic2_size)))),
+    );
+    const pic2 = c.av_frame_alloc();
+    try possible_av_error(L, c.avpicture_fill(
+        @ptrCast(*c.AVPicture, pic2),
+        pic2_buf,
+        c.AV_PIX_FMT_RGB24,
+        codec_context.width,
+        codec_context.height,
+    ));
+
+    var funny_stream_1: *funny_stream_t = @ptrCast(
+        *funny_stream_t,
+        @alignCast(std.meta.alignment(funny_stream_t), c.lua_newuserdata(L, @sizeOf(funny_stream_t)).?),
+    );
+    _ = c.lua_getfield(L, -@as(c_int, 10000), "funny_stream");
+    _ = c.lua_setmetatable(L, -@as(c_int, 2));
+
+    funny_stream_1.* = funny_stream_t{
+        .img_convert_ctx = img_convert_ctx,
+        .context = context,
+        .ccontext = codec_context,
+        .video_stream_index = video_stream_index,
+        .loop_ctx = funny_stream_loop_t{
+            .packet = packet,
+            .oc = inner_loop_context,
+            .codec = codec,
+            .size = pic1_size,
+            .picture_buf = pic1_buf,
+            .pic = pic1,
+
+            .size2 = pic2_size,
+            .picture_buf2 = pic2_buf,
+            .pic_rgb = pic2,
+        },
+    };
+
     _ = c.printf("init done!\n");
     return 1;
 }
@@ -162,11 +238,14 @@ export fn funny_fetch_frame(arg_L: ?*c.lua_State) callconv(.C) c_int {
         if (funny_stream_1.*.loop_ctx.stream == null) {
             std.log.info("creating stream", .{});
 
-            const codec_context = funny_stream_1.context.?.streams[@intCast(usize, funny_stream_1.video_stream_index)].*.codec.?;
-            const actual_codec = codec_context.*.codec.?;
+            const codec_context = funny_stream_1.context.streams[@intCast(usize, funny_stream_1.video_stream_index)].*.codec.?;
+            const actual_codec = codec_context.*.codec;
             funny_stream_1.*.loop_ctx.stream = c.avformat_new_stream(funny_stream_1.*.loop_ctx.oc, actual_codec);
 
-            _ = c.avcodec_copy_context(funny_stream_1.*.loop_ctx.stream.?.codec, codec_context);
+            if (c.avcodec_copy_context(funny_stream_1.*.loop_ctx.stream.?.codec, codec_context) < 0) {
+                c.lua_pushstring(L, "failed to initialize av stream");
+                _ = c.lua_error(L);
+            }
 
             funny_stream_1.*.loop_ctx.stream.?.sample_aspect_ratio =
                 codec_context.?.*.sample_aspect_ratio;

@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,6 +81,7 @@ extern int funny_open_old(lua_State *L) {
 
   avcodec_get_context_defaults3(funny_stream->ccontext,
                                 funny_stream->loop_ctx.codec);
+
   avcodec_copy_context(
       funny_stream->ccontext,
       funny_stream->context->streams[funny_stream->video_stream_index]->codec);
@@ -130,7 +132,7 @@ static int funny_clean_old(lua_State *L) {
   // avformat_free_context(oc);
 }
 
-extern int funny_fetch_frameold(lua_State *L) {
+extern int funny_fetch_frame_old(lua_State *L) {
   struct timespec begin, end;
   clock_gettime(CLOCK_MONOTONIC, &begin);
 
