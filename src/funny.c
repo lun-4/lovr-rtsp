@@ -97,13 +97,13 @@ extern int funny_open_old(lua_State *L) {
       NULL);
 
   funny_stream->loop_ctx.size =
-      avpicture_get_size(AV_PIX_FMT_YUV420P, funny_stream->ccontext->width,
+      avpicture_get_size(AV_PIX_FMT_YUV444P10LE, funny_stream->ccontext->width,
                          funny_stream->ccontext->height);
   funny_stream->loop_ctx.picture_buf =
       (uint8_t *)(av_malloc(funny_stream->loop_ctx.size));
   funny_stream->loop_ctx.pic = av_frame_alloc();
   avpicture_fill((AVPicture *)funny_stream->loop_ctx.pic,
-                 funny_stream->loop_ctx.picture_buf, AV_PIX_FMT_YUV420P,
+                 funny_stream->loop_ctx.picture_buf, AV_PIX_FMT_YUV444P10LE,
                  funny_stream->ccontext->width, funny_stream->ccontext->height);
 
   funny_stream->loop_ctx.size2 =
