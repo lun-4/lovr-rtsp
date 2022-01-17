@@ -1,17 +1,20 @@
 cmake_minimum_required(VERSION 3.1.0)
+include(ExternalProject)
 project(rtsp)
 
-add_library(funny MODULE
-src/funny.c
-)
-set_target_properties(funny PROPERTIES PREFIX "")
+set(ZIG_RTSP "${CMAKE_CURRENT_SOURCE_DIR}/zig-out/lib/liblovr-rtsp.so")
+
+add_library(funny MODULE IMPORTED GLOBAL)
+set_target_properties(funny PROPERTIES IMPORTED_LOCATION ${ZIG_RTSP})
 
 # android: use prebuilt .so from allonet project
 # TODO maybe an automated way to get the .so's?
 if(ANDROID)
-add_custom_command(
-  TARGET funny PRE_BUILD
-  COMMAND zig build -Dandroid=true
+add_custom_target(
+  zigrtsp
+  COMMAND zig build -Dandroid=true -Dandroid-ndk=/home/luna/Downloads/abc/android-cli/sdkroot/ndk/21.1.6352462
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  VERBATIM
 )
 
 set(RELATIVE_PREFIX "plugins/lovr-rtsp")
@@ -39,19 +42,30 @@ set_target_properties(libswscale PROPERTIES
   IMPORTED_LOCATION "${LIBAV_LIB_PATH}/libswscale.so"
 )
 
+# set_target_properties(real PROPERTIES PREFIX "")
+
 set(LOVR_PLUGIN_TARGETS funny libavformat libavutil libavcodec libswresample libswscale)
-# include_directories(./q2_include)
-# target_link_libraries(funny libavformat libavutil libavcodec libswresample libswscale)
 endif()
 
-# desktop: use ffmpeg provided by system
+# desktop: use ffmpeg provided by system (done in build.zig)
 if(UNIX AND NOT ANDROID)
-add_custom_command(
-  TARGET myExe PRE_BUILD
-  COMMAND zig build -Dandroid=false
+add_custom_target(
+  zigrtsp
+  COMMAND zig build
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  VERBATIM
 )
-#include_directories(/usr/include/lua5.1)
-#target_link_libraries(funny avformat avutil avcodec swresample swscale)
+
+
+set(LOVR_PLUGIN_TARGETS funny)
 endif()
 
-set_target_properties(funny PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+add_dependencies(funny zigrtsp)
+
+
+#set_target_properties(funny PROPERTIES LINKER_LANGUAGE C)
+#set_target_properties(funny PROPERTIES PREFIX "")
+
+# build.zig already sets PIC
+# set_target_properties(funny PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+set_directory_properties( PROPERTIES LOVR_PLUGIN_TARGETS funny)
