@@ -285,13 +285,13 @@ const funny_lib = [_]c.luaL_Reg{
     c.luaL_Reg{ .name = null, .func = null },
 };
 
-export fn luaopen_funny(L: ?*c.lua_State) c_int {
+export fn luaopen_rtsp(L: ?*c.lua_State) c_int {
     open_mutex.lock();
     defer open_mutex.unlock();
 
     _ = c.avformat_network_init();
     _ = c.luaL_newmetatable(L, "funny_stream");
-    c.luaL_register(L, "funny", &funny_lib);
+    c.luaL_register(L, "rtsp", &funny_lib);
 
     return 1;
 }

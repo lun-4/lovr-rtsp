@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1.0)
 include(ExternalProject)
 project(rtsp)
 
-set(ZIG_RTSP "${CMAKE_CURRENT_SOURCE_DIR}/zig-out/lib/liblovr-rtsp.so")
+set(ZIG_RTSP "${CMAKE_CURRENT_SOURCE_DIR}/zig-out/lib/rtsp.so")
 
 add_library(funny MODULE IMPORTED GLOBAL)
 set_target_properties(funny PROPERTIES IMPORTED_LOCATION ${ZIG_RTSP})
