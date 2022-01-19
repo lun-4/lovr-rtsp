@@ -59,4 +59,5 @@ zig-out/
 zig-cache/
 android_libc.txt
 
-build*
+build/*
+!build.zig
