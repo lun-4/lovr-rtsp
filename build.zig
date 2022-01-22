@@ -61,6 +61,8 @@ pub fn build(b: *std.build.Builder) void {
             std.fs.path.join(b.allocator, &[_][]const u8{ sysroot, "/usr/include" }) catch unreachable;
         const include_arch_dependent =
             std.fs.path.join(b.allocator, &[_][]const u8{ sysroot, "/usr/include/aarch64-linux-android" }) catch unreachable;
+        const libgcc_lib_path =
+            std.fs.path.join(b.allocator, &[_][]const u8{ android_ndk.?, "/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x" }) catch unreachable;
 
         std.log.info("sysroot '{s}'", .{sysroot});
         std.log.info("include_generic '{s}'", .{include_generic});
@@ -85,6 +87,8 @@ pub fn build(b: *std.build.Builder) void {
 
         lib.addLibPath(std.fs.path.dirname(luajit_path.?).?);
         lib.linkSystemLibrary("luajit");
+        lib.addLibPath(libgcc_lib_path);
+        lib.linkSystemLibrary("gcc");
     }
 
     const main_tests = b.addTest("src/main.zig");
