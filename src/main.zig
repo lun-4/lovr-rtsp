@@ -15,6 +15,74 @@ const c = @cImport({
     @cInclude("libavformat/avio.h");
     @cInclude("libswscale/swscale.h");
 });
+const av_error_codes = [_]c_int{
+    c.AVERROR_BSF_NOT_FOUND,
+    c.AVERROR_BUG,
+    c.AVERROR_BUFFER_TOO_SMALL,
+    c.AVERROR_DECODER_NOT_FOUND,
+    c.AVERROR_DEMUXER_NOT_FOUND,
+    c.AVERROR_ENCODER_NOT_FOUND,
+    c.AVERROR_EOF,
+    c.AVERROR_EXIT,
+    c.AVERROR_EXTERNAL,
+    c.AVERROR_FILTER_NOT_FOUND,
+    c.AVERROR_INVALIDDATA,
+    c.AVERROR_MUXER_NOT_FOUND,
+    c.AVERROR_OPTION_NOT_FOUND,
+    c.AVERROR_PATCHWELCOME,
+    c.AVERROR_PROTOCOL_NOT_FOUND,
+    c.AVERROR_STREAM_NOT_FOUND,
+    c.AVERROR_BUG2,
+    c.AVERROR_UNKNOWN,
+    c.AVERROR_EXPERIMENTAL,
+    c.AVERROR_INPUT_CHANGED,
+    c.AVERROR_OUTPUT_CHANGED,
+    c.AVERROR_HTTP_BAD_REQUEST,
+    c.AVERROR_HTTP_UNAUTHORIZED,
+    c.AVERROR_HTTP_FORBIDDEN,
+    c.AVERROR_HTTP_NOT_FOUND,
+    c.AVERROR_HTTP_OTHER_4XX,
+    c.AVERROR_HTTP_SERVER_ERROR,
+};
+
+const av_errors = [_][]const u8{
+    "AVERROR_BSF_NOT_FOUND",
+    "AVERROR_BUG",
+    "AVERROR_BUFFER_TOO_SMALL",
+    "AVERROR_DECODER_NOT_FOUND",
+    "AVERROR_DEMUXER_NOT_FOUND",
+    "AVERROR_ENCODER_NOT_FOUND",
+    "AVERROR_EOF",
+    "AVERROR_EXIT",
+    "AVERROR_EXTERNAL",
+    "AVERROR_FILTER_NOT_FOUND",
+    "AVERROR_INVALIDDATA",
+    "AVERROR_MUXER_NOT_FOUND",
+    "AVERROR_OPTION_NOT_FOUND",
+    "AVERROR_PATCHWELCOME",
+    "AVERROR_PROTOCOL_NOT_FOUND",
+    "AVERROR_STREAM_NOT_FOUND",
+    "AVERROR_BUG2",
+    "AVERROR_UNKNOWN",
+    "AVERROR_EXPERIMENTAL",
+    "AVERROR_INPUT_CHANGED",
+    "AVERROR_OUTPUT_CHANGED",
+    "AVERROR_HTTP_BAD_REQUEST",
+    "AVERROR_HTTP_UNAUTHORIZED",
+    "AVERROR_HTTP_FORBIDDEN",
+    "AVERROR_HTTP_NOT_FOUND",
+    "AVERROR_HTTP_OTHER_4XX",
+    "AVERROR_HTTP_SERVER_ERROR",
+};
+
+fn libav_strerror(error_code: c_int) ?[]const u8 {
+    var idx: usize = 0;
+    while (idx < av_error_codes.len) : (idx += 1) {
+        if (av_error_codes[idx] == error_code) return av_errors[idx];
+    }
+
+    return null;
+}
 
 pub const funny_stream_loop_t = extern struct {
     packet: c.AVPacket,
@@ -43,6 +111,10 @@ const logger = std.log.scoped(.lovr_rtsp);
 
 fn possible_av_error(L: *c.lua_State, ret: c_int) !void {
     if (ret < 0) {
+        const maybe_av_error_name = libav_strerror(ret);
+        if (maybe_av_error_name) |error_name| {
+            std.log.err("av error: {s}", .{error_name});
+        }
         c.lua_pushstring(L, "libav issue");
         _ = c.lua_error(L);
         return error.AvError;
@@ -59,6 +131,7 @@ export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
         if (@errorReturnTrace()) |trace| {
             std.debug.dumpStackTrace(trace.*);
         }
+
         c.lua_pushstring(L, "error in native rtsp library");
         _ = c.lua_error(L);
         return 1;
