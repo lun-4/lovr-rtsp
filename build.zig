@@ -10,6 +10,7 @@ const c_args = [_][]const u8{
 pub fn build(b: *std.build.Builder) void {
     const is_android = b.option(bool, "android", "building for the quest 2") orelse false;
     const android_ndk = b.option([]const u8, "android-ndk", "building for the quest 2") orelse if (is_android) @panic("need android ndk") else null;
+    const luajit_path = b.option([]const u8, "luajit", "path to luajit target binary (required if cross compiling to quest 2)") orelse if (is_android) @panic("need luajit path") else null;
 
     var target: std.zig.CrossTarget = undefined;
 
@@ -71,14 +72,19 @@ pub fn build(b: *std.build.Builder) void {
         lib.addIncludeDir(include_generic);
         lib.addIncludeDir(include_arch_dependent);
         lib.linkLibC();
-        lib.addIncludeDir("/usr/include/lua5.1");
 
+        lib.addIncludeDir("/usr/include/lua5.1");
         lib.addIncludeDir("./q2_include");
+
+        lib.linkSystemLibrary("c");
         lib.linkSystemLibrary("./q2_lib/libavcodec.so");
         lib.linkSystemLibrary("./q2_lib/libavformat.so");
         lib.linkSystemLibrary("./q2_lib/libavutil.so");
         lib.linkSystemLibrary("./q2_lib/libswresample.so");
         lib.linkSystemLibrary("./q2_lib/libswscale.so");
+
+        lib.addLibPath(std.fs.path.dirname(luajit_path.?).?);
+        lib.linkSystemLibrary("luajit");
     }
 
     const main_tests = b.addTest("src/main.zig");

@@ -12,7 +12,7 @@ set_target_properties(funny PROPERTIES IMPORTED_LOCATION ${ZIG_RTSP})
 if(ANDROID)
 add_custom_target(
   zigrtsp
-  COMMAND zig build -Dandroid=true -Dandroid-ndk=/home/luna/Downloads/abc/android-cli/sdkroot/ndk/21.1.6352462
+  COMMAND zig build -Dandroid=true -Dandroid-ndk=/home/luna/Downloads/abc/android-cli/sdkroot/ndk/21.1.6352462 -Dluajit=$<TARGET_FILE:luajit>
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   VERBATIM
 )
