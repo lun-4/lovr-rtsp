@@ -281,27 +281,14 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     return 1;
 }
 
-export fn funny_fetch_frame(arg_L: ?*c.lua_State) callconv(.C) c_int {
+fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: *anyopaque) !f64 {
     open_mutex.lock();
     defer open_mutex.unlock();
 
-    var L = arg_L;
-    var begin: c.timespec = undefined;
-    var end: c.timespec = undefined;
-    _ = c.clock_gettime(@as(c_int, 1), &begin);
-    _ = c.printf("fetch frame!\n");
-    if (c.lua_gettop(L) != @as(c_int, 2)) {
-        return c.luaL_error(L, "expecting exactly 2 arguments");
-    }
+    var timer = try std.time.Timer.start();
 
-    const funny_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");
-    var funny_stream_1: *funny_stream_t = @ptrCast(
-        *funny_stream_t,
-        @alignCast(std.meta.alignment(funny_stream_t), funny_stream_voidptr.?),
-    );
+    std.log.info("fetching a frame", .{});
 
-    var blob_ptr: ?*anyopaque = c.lua_touserdata(L, @as(c_int, 2));
-    _ = (funny_stream_1 != @ptrCast([*c]funny_stream_t, @alignCast(@import("std").meta.alignment(funny_stream_t), @intToPtr(?*anyopaque, @as(c_int, 0))))) or (c.luaL_argerror(L, @as(c_int, 1), "'funny_stream' expected") != 0);
     if (c.av_read_frame(funny_stream_1.*.context, &funny_stream_1.*.loop_ctx.packet) < @as(c_int, 0)) {
         c.lua_pushstring(L, "c.av_read_frame return less than 0");
         _ = c.lua_error(L);
@@ -344,17 +331,59 @@ export fn funny_fetch_frame(arg_L: ?*c.lua_State) callconv(.C) c_int {
     }
     c.av_free_packet(&funny_stream_1.*.loop_ctx.packet);
     c.av_init_packet(&funny_stream_1.*.loop_ctx.packet);
-    _ = c.clock_gettime(@as(c_int, 1), &end);
-    var seconds: c_long = end.tv_sec - begin.tv_sec;
-    var nanoseconds: c_long = end.tv_nsec - begin.tv_nsec;
-    var elapsed: f64 = @intToFloat(f64, seconds) + (@intToFloat(f64, nanoseconds) * 0.000000001);
-    c.lua_pushnumber(L, elapsed);
-    return 1;
+
+    const elapsed: f64 = @intToFloat(f64, timer.read()) / @intToFloat(f64, std.time.ns_per_s);
+    return elapsed;
+}
+
+export fn rtsp_frame_loop_wrapper(arg_L: ?*c.lua_State) callconv(.C) c_int {
+    var L = arg_L.?;
+
+    return rtsp_frame_loop(L) catch |err| {
+        logger.err("error happened shit {s}", .{@errorName(err)});
+        if (@errorReturnTrace()) |trace| {
+            std.debug.dumpStackTrace(trace.*);
+        }
+        c.lua_pushstring(L, "error in native rtsp library");
+        _ = c.lua_error(L);
+        return 1;
+    };
+}
+
+const FPS_TARGET: f64 = 45;
+const FPS_BUDGET: f64 = (1.0 / FPS_TARGET);
+
+fn rtsp_frame_loop(L: *c.lua_State) !c_int {
+    if (c.lua_gettop(L) != @as(c_int, 2)) {
+        return c.luaL_error(L, "expecting exactly 2 arguments");
+    }
+
+    const rtsp_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");
+    var rtsp_stream: *funny_stream_t = @ptrCast(
+        *funny_stream_t,
+        @alignCast(std.meta.alignment(funny_stream_t), rtsp_stream_voidptr.?),
+    );
+
+    var blob_ptr: ?*anyopaque = c.lua_touserdata(L, @as(c_int, 2));
+
+    while (true) {
+        const time_receiving_frame: f64 = try rtsp_fetch_frame(L, rtsp_stream, blob_ptr.?);
+        const remaining_time = FPS_BUDGET - time_receiving_frame;
+        std.log.info("timings {} {} {}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
+
+        if (remaining_time > 0) {
+            // good case: we decoded fast
+            // we can sleep the rest of the ms knowing we're on 60fps target
+            std.time.sleep(@floatToInt(u64, remaining_time * std.time.ns_per_s));
+        }
+    }
+
+    return 0;
 }
 
 const funny_lib = [_]c.luaL_Reg{
     c.luaL_Reg{ .name = "open", .func = funny_open },
-    c.luaL_Reg{ .name = "fetchFrame", .func = funny_fetch_frame },
+    c.luaL_Reg{ .name = "frameLoop", .func = rtsp_frame_loop_wrapper },
     c.luaL_Reg{ .name = null, .func = null },
 };
 
