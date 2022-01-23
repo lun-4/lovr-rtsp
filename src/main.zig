@@ -369,12 +369,12 @@ fn rtsp_frame_loop(L: *c.lua_State) !c_int {
     while (true) {
         const time_receiving_frame: f64 = try rtsp_fetch_frame(L, rtsp_stream, blob_ptr.?);
         const remaining_time = FPS_BUDGET - time_receiving_frame;
-        std.log.info("timings {} {} {}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
+        std.log.info("timings {d:.6} {d:.6} {d:.6}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
 
         if (remaining_time > 0) {
             // good case: we decoded fast
             // we can sleep the rest of the ms knowing we're on 60fps target
-            std.time.sleep(@floatToInt(u64, remaining_time * std.time.ns_per_s));
+            //std.time.sleep(@floatToInt(u64, remaining_time * std.time.ns_per_s));
         }
     }
 
