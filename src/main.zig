@@ -312,9 +312,9 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
         }
         var check: c_int = 0;
         funny_stream_1.*.loop_ctx.packet.stream_index = funny_stream_1.*.loop_ctx.stream.?.id;
-        _ = c.printf("decoding frame\n");
-        var result: c_int = c.avcodec_decode_video2(funny_stream_1.*.ccontext, funny_stream_1.*.loop_ctx.pic, &check, &funny_stream_1.*.loop_ctx.packet);
-        _ = c.printf("decoded %d bytes. check %d\n", result, check);
+        //_ = c.printf("decoding frame\n");
+        _ = c.avcodec_decode_video2(funny_stream_1.*.ccontext, funny_stream_1.*.loop_ctx.pic, &check, &funny_stream_1.*.loop_ctx.packet);
+        //_ = c.printf("decoded %d bytes. check %d\n", result, check);
         if (check != @as(c_int, 0)) {
             _ = c.sws_scale(
                 funny_stream_1.*.img_convert_ctx,
@@ -325,7 +325,7 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
                 @ptrCast([*c][*c]u8, @alignCast(std.meta.alignment([*c][*c]u8), &funny_stream_1.*.loop_ctx.pic_rgb.*.data)),
                 @ptrCast([*c]c_int, @alignCast(std.meta.alignment(c_int), &funny_stream_1.*.loop_ctx.pic_rgb.*.linesize)),
             );
-            _ = c.printf("width %d height %d\n", funny_stream_1.*.ccontext.*.width, funny_stream_1.*.ccontext.*.height);
+            //_ = c.printf("width %d height %d\n", funny_stream_1.*.ccontext.*.width, funny_stream_1.*.ccontext.*.height);
             _ = c.memcpy(blob_ptr, @ptrCast(?*const anyopaque, funny_stream_1.*.loop_ctx.picture_buf2), @bitCast(c_ulong, @as(c_long, funny_stream_1.*.loop_ctx.size2)));
         }
     }
