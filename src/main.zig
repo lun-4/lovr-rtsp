@@ -153,7 +153,10 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     var codec_context_cptr = c.avcodec_alloc_context3(codec).?;
     var codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
 
-    if (c.avformat_open_input(&context_cptr, rtsp_url.ptr, null, null) != @as(c_int, 0)) {
+    var opts: ?*c.AVDictionary = null;
+    try possible_av_error(L, c.av_dict_set(&opts, "rtsp_transport", "tcp", 0));
+
+    if (c.avformat_open_input(&context_cptr, rtsp_url.ptr, null, &opts) != @as(c_int, 0)) {
         c.lua_pushstring(L, "c.avformat_open_input error");
         _ = c.lua_error(L);
         return error.AvError;
