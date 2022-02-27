@@ -103,6 +103,7 @@ pub const funny_stream_t = extern struct {
     ccontext: *c.AVCodecContext,
     video_stream_index: usize,
     loop_ctx: funny_stream_loop_t,
+    stop: bool = false,
 };
 
 // global funny_open mutex
@@ -286,9 +287,6 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
 }
 
 fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: *anyopaque) !f64 {
-    open_mutex.lock();
-    defer open_mutex.unlock();
-
     var timer = try std.time.Timer.start();
 
     std.log.info("fetching a frame", .{});
@@ -340,6 +338,22 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
     return elapsed;
 }
 
+export fn rtsp_stop_wrapper(arg_L: ?*c.lua_State) callconv(.C) c_int {
+    var L = arg_L.?;
+    if (c.lua_gettop(L) != @as(c_int, 2)) {
+        return c.luaL_error(L, "expecting exactly 2 arguments");
+    }
+
+    const rtsp_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");
+    var rtsp_stream: *funny_stream_t = @ptrCast(
+        *funny_stream_t,
+        @alignCast(std.meta.alignment(funny_stream_t), rtsp_stream_voidptr.?),
+    );
+
+    rtsp_stream.stop = true;
+    return 0;
+}
+
 export fn rtsp_frame_loop_wrapper(arg_L: ?*c.lua_State) callconv(.C) c_int {
     var L = arg_L.?;
 
@@ -371,6 +385,11 @@ fn rtsp_frame_loop(L: *c.lua_State) !c_int {
     var blob_ptr: ?*anyopaque = c.lua_touserdata(L, @as(c_int, 2));
 
     while (true) {
+        if (rtsp_stream.stop) {
+            std.log.info("stream loop stopping", .{});
+            break;
+        }
+
         const time_receiving_frame: f64 = try rtsp_fetch_frame(L, rtsp_stream, blob_ptr.?);
         const remaining_time = FPS_BUDGET - time_receiving_frame;
         std.log.info("timings {d:.6} {d:.6} {d:.6}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
@@ -388,6 +407,7 @@ fn rtsp_frame_loop(L: *c.lua_State) !c_int {
 const funny_lib = [_]c.luaL_Reg{
     c.luaL_Reg{ .name = "open", .func = funny_open },
     c.luaL_Reg{ .name = "frameLoop", .func = rtsp_frame_loop_wrapper },
+    c.luaL_Reg{ .name = "stop", .func = rtsp_stop_wrapper },
     c.luaL_Reg{ .name = null, .func = null },
 };
 
