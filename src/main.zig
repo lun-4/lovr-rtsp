@@ -126,6 +126,7 @@ export fn funny_open(arg_L: ?*c.lua_State) callconv(.C) c_int {
 
     var rtsp_url_len: usize = undefined;
     var rtsp_url = c.luaL_checklstring(L, @as(c_int, 1), &rtsp_url_len);
+
     return funny_open_wrapped(L, rtsp_url[0..rtsp_url_len :0]) catch |err| {
         logger.err("error happened shit {s}", .{@errorName(err)});
         if (@errorReturnTrace()) |trace| {
@@ -154,7 +155,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     var codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
 
     var opts: ?*c.AVDictionary = null;
-    try possible_av_error(L, c.av_dict_set(&opts, "rtsp_transport", "tcp", 0));
+    try possible_av_error(L, c.av_dict_set(&opts, "reorder_queue_size", "100000", 0));
 
     if (c.avformat_open_input(&context_cptr, rtsp_url.ptr, null, &opts) != @as(c_int, 0)) {
         c.lua_pushstring(L, "c.avformat_open_input error");
