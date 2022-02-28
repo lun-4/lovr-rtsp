@@ -4,27 +4,36 @@ streaming rtsp to a lovr Image object, courtesy of ffmpeg
 
 ## how to build
 
-```
-# clone to a different folder
-# DO NOT DO THIS ON CURRENT DIRECTORY
-# allonet is NOT a submodule.
-git clone https://github.com/alloverse/allonet
+- https://ziglang.org
 
+```sh
 git clone https://github.com/lun-4/lovr-rtsp
 cd lovr-rtsp
-./copy_vendored_ffmpeg.sh path/to/allonet/repository/clone
 
-# for x86
+# for linux x86 (uses system's ffmpeg libs, so have it installed):
 zig build
 cp ./zig-out/lib/librtsp.so.0.0.1 path/to/your/game/or/lovr/folder/rtsp.so
 
-# for android
-# (will not support independent builds of rtsp for android at the moment,
-# many paths are hardcoded. if you want to add support, feel free!)
-# (you will need to build lovr for android to get luajit. see https://lovr.org/docs/Compiling)
-# (you also need android NDK, you can get that via android's commandlinetoools)
+# for android (WILL BREAK ON ANY SYSTEM OTHER THAN MINE. CURSED BUILD PROCESS AHEAD):
+#
+# will not provide support to android builds of lovr-rtsp at the moment.
+# too much bandwidth and curse in this exists at the moment, with lots of
+# hardcoded paths. maybe in the future, but not now.
+
+# get allonet repo
+# clone to a different folder
+# DO NOT DO THIS ON CURRENT DIRECTORY
+# allonet is NOT (and will never be) a submodule.
+git clone https://github.com/alloverse/allonet path/to/allonet/repository/clone
+./copy_vendored_ffmpeg.sh path/to/allonet/repository/clone
+
+# you need android NDK, you can get that via android's commandlinetoools, as shown here
 path/to/android/commandlinetools/bin/sdkmanager --sdk_root=/path/to/sdkroot 'platforms;android-28' 'build-tools;28.0.3' 'ndk;21.1.6352462'
+
+# you need to build lovr for android to get luajit. see https://lovr.org/docs/Compiling
 zig build -Dandroid=true -Dandroid-ndk=/path/to/sdkroot/ndk/21.1.6352462 -Dluajit=/path/to/lovr/build-android/luajit/src/luajit
+
+# you might have to do this if you're me
 cp ./zig-out/lib/librtsp.so.0.0.1 /path/to/lovr/build-android/raw/lib/arm64-v8a/rtsp.so
 ```
 
