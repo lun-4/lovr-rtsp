@@ -299,7 +299,7 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
         if (funny_stream_1.*.loop_ctx.stream == null) {
             std.log.info("creating stream", .{});
 
-            const codec_context = funny_stream_1.context.streams[@intCast(usize, funny_stream_1.video_stream_index)].*.codec.?;
+            const codec_context = funny_stream_1.context.streams[funny_stream_1.video_stream_index].*.codec.?;
             const actual_codec = codec_context.*.codec;
             funny_stream_1.*.loop_ctx.stream = c.avformat_new_stream(funny_stream_1.*.loop_ctx.oc, actual_codec);
 
