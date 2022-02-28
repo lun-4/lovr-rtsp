@@ -46,6 +46,10 @@ then communicate the `myImage` object and the rtsp url over lovr's Channel.
 local rtsp = require "rtsp"
 local stream = rtsp.open("rtsp://localhost:6969/some_stream")
 
--- blocks indefinitely in a loop of frame fetching
+-- blocks indefinitely in a loop of frame fetching to that myImage
+-- assumes myImage is rgb24.
+-- this is done because its a very hot path and i would rather have this
+-- big hot path be implemented natively instead of having to go through the
+-- lua<->native boundary (even though it might be pretty fast thanks to luajit)
 rtsp.frameLoop(stream, myImage:getBlob():getPointer())
 ```
