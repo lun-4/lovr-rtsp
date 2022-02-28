@@ -90,10 +90,10 @@ pub const funny_stream_loop_t = extern struct {
     stream: ?*c.AVStream = null,
     codec: *c.AVCodec,
     size: c_int,
-    picture_buf: [*c]u8,
+    picture_buf: [*]u8,
     pic: *c.AVFrame,
     size2: c_int,
-    picture_buf2: [*c]u8,
+    picture_buf2: [*]u8,
     pic_rgb: *c.AVFrame,
 };
 
@@ -286,7 +286,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     return 1;
 }
 
-fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: *anyopaque) !f64 {
+fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: [*]u8) !f64 {
     var timer = try std.time.Timer.start();
 
     std.log.info("fetching a frame", .{});
@@ -296,7 +296,6 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
         _ = c.lua_error(L);
     }
     if (funny_stream_1.*.loop_ctx.packet.stream_index == funny_stream_1.*.video_stream_index) {
-        _ = c.printf("video!\n");
         if (funny_stream_1.*.loop_ctx.stream == null) {
             std.log.info("creating stream", .{});
 
@@ -314,9 +313,7 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
         }
         var check: c_int = 0;
         funny_stream_1.*.loop_ctx.packet.stream_index = funny_stream_1.*.loop_ctx.stream.?.id;
-        //_ = c.printf("decoding frame\n");
         _ = c.avcodec_decode_video2(funny_stream_1.*.ccontext, funny_stream_1.*.loop_ctx.pic, &check, &funny_stream_1.*.loop_ctx.packet);
-        //_ = c.printf("decoded %d bytes. check %d\n", result, check);
         if (check != @as(c_int, 0)) {
             _ = c.sws_scale(
                 funny_stream_1.*.img_convert_ctx,
@@ -327,8 +324,9 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
                 @ptrCast([*c][*c]u8, @alignCast(std.meta.alignment([*c][*c]u8), &funny_stream_1.*.loop_ctx.pic_rgb.*.data)),
                 @ptrCast([*c]c_int, @alignCast(std.meta.alignment(c_int), &funny_stream_1.*.loop_ctx.pic_rgb.*.linesize)),
             );
-            //_ = c.printf("width %d height %d\n", funny_stream_1.*.ccontext.*.width, funny_stream_1.*.ccontext.*.height);
-            _ = c.memcpy(blob_ptr, @ptrCast(?*const anyopaque, funny_stream_1.*.loop_ctx.picture_buf2), @bitCast(c_ulong, @as(c_long, funny_stream_1.*.loop_ctx.size2)));
+
+            const picbuf_size = @bitCast(c_ulong, @as(c_long, funny_stream_1.*.loop_ctx.size2));
+            std.mem.copy(u8, blob_ptr[0..picbuf_size], funny_stream_1.*.loop_ctx.picture_buf2[0..picbuf_size]);
         }
     }
     c.av_free_packet(&funny_stream_1.*.loop_ctx.packet);
@@ -382,7 +380,7 @@ fn rtsp_frame_loop(L: *c.lua_State) !c_int {
         @alignCast(std.meta.alignment(funny_stream_t), rtsp_stream_voidptr.?),
     );
 
-    var blob_ptr: ?*anyopaque = c.lua_touserdata(L, @as(c_int, 2));
+    var blob_ptr: ?[*]u8 = @ptrCast(?[*]u8, c.lua_touserdata(L, @as(c_int, 2)));
 
     while (true) {
         if (rtsp_stream.stop) {
