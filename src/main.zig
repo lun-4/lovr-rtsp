@@ -260,7 +260,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
         *funny_stream_t,
         @alignCast(std.meta.alignment(funny_stream_t), c.lua_newuserdata(L, @sizeOf(funny_stream_t)).?),
     );
-    _ = c.lua_getfield(L, -@as(c_int, 10000), "funny_stream");
+    c.lua_getfield(L, -@as(c_int, 10000), "funny_stream");
     _ = c.lua_setmetatable(L, -@as(c_int, 2));
 
     funny_stream_1.* = funny_stream_t{
@@ -329,7 +329,7 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
             std.mem.copy(u8, blob_ptr[0..picbuf_size], funny_stream_1.*.loop_ctx.picture_buf2[0..picbuf_size]);
         }
     }
-    c.av_free_packet(&funny_stream_1.*.loop_ctx.packet);
+    //c.av_free_packet(&funny_stream_1.*.loop_ctx.packet);
     c.av_init_packet(&funny_stream_1.*.loop_ctx.packet);
 
     const elapsed: f64 = @intToFloat(f64, timer.read()) / @intToFloat(f64, std.time.ns_per_s);
@@ -390,7 +390,7 @@ fn rtsp_frame_loop(L: *c.lua_State) !c_int {
 
         const time_receiving_frame: f64 = try rtsp_fetch_frame(L, rtsp_stream, blob_ptr.?);
         const remaining_time = FPS_BUDGET - time_receiving_frame;
-        std.log.info("timings {d:.6} {d:.6} {d:.6}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
+        //std.log.info("timings {d:.6} {d:.6} {d:.6}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
 
         if (remaining_time > 0) {
             // good case: we decoded fast
