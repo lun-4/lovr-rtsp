@@ -289,8 +289,6 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
 fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: [*]u8) !f64 {
     var timer = try std.time.Timer.start();
 
-    std.log.info("fetching a frame", .{});
-
     if (c.av_read_frame(funny_stream_1.*.context, &funny_stream_1.*.loop_ctx.packet) < @as(c_int, 0)) {
         c.lua_pushstring(L, "c.av_read_frame return less than 0");
         _ = c.lua_error(L);

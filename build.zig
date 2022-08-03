@@ -53,7 +53,7 @@ pub fn build(b: *std.build.Builder) void {
         lib.link_function_sections = true;
         lib.bundle_compiler_rt = true;
 
-        std.log.info("got ndk '{s}'", .{android_ndk});
+        std.log.info("got ndk '{?s}'", .{android_ndk});
 
         const sysroot =
             std.fs.path.join(b.allocator, &[_][]const u8{ android_ndk.?, "/toolchains/llvm/prebuilt/linux-x86_64/sysroot" }) catch unreachable;
