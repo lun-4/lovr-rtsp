@@ -96,12 +96,12 @@ const log = std.log.scoped(.lovr_rtsp);
 
 fn maybeAvError(ret: c_int) !void {
     if (ret < 0) {
-        const maybe_av_error_name = libav_strerror(ret);
-        if (maybe_av_error_name) |error_name| {
-            log.err("av error: {s}", .{error_name});
-        } else {
-            log.err("libav returned {d}", .{ret});
-        }
+        var buf: [512]u8 = undefined;
+        _ = c.av_strerror(ret, &buf, 512);
+        var err = std.mem.span(&buf);
+        log.err("libav returned {d}", .{ret});
+        log.err("av error: {s}", .{err});
+
         return error.AvError;
     }
 }
@@ -355,60 +355,76 @@ pub const Stream = extern struct {
     }
 
     pub fn runMainLoop(self: Self) !void {
-        var packet: c.AVPacket = undefined;
+        var packet: *c.AVPacket = c.av_packet_alloc().?;
         var frame: *c.AVFrame = c.av_frame_alloc().?;
 
-        var reading_state = false;
-
         while (true) {
-            c.av_init_packet(&packet);
+            defer c.av_packet_unref(packet);
 
-            while (true) {
-                log.info("read frame", .{});
-                if (reading_state) {
-                    const send_packet_ret = (c.avcodec_send_packet(self.ctx.codec, &packet));
-                    if (send_packet_ret == avError(.AGAIN)) {
-                        break;
-                    } else try maybeAvError(send_packet_ret);
+            try maybeAvError(c.av_read_frame(self.ctx.format, packet));
+
+            if (packet.stream_index == self.video_stream_index) {
+                var response = c.avcodec_send_packet(self.ctx.codec, packet);
+                if (response < 0) {
+                    var buf: [512]u8 = undefined;
+                    _ = c.av_strerror(response, &buf, 512);
+                    var err = std.mem.span(&buf);
+                    log.err("send packet error: {s}", .{err});
+                    return error.SendPacketError;
                 }
 
-                try maybeAvError(c.av_read_frame(self.ctx.format, &packet));
-                if (packet.stream_index == self.video_stream_index) {
-                    const send_packet_ret = (c.avcodec_send_packet(self.ctx.codec, &packet));
-                    if (send_packet_ret == avError(.AGAIN)) {
-                        reading_state = true;
-                        break;
-                    } else try maybeAvError(send_packet_ret);
-                }
-            }
+                while (response >= 0) {
+                    response = c.avcodec_receive_frame(self.ctx.codec, frame);
+                    if (response == avError(.AGAIN)) break else try maybeAvError(response);
+                    if (response >= 0) {
+                        log.info("frame {d} type {s} size {d} format {d} pts {d} keyframe {d} dts {d}", .{
+                            self.ctx.codec.frame_number,
+                            &[_]u8{c.av_get_picture_type_char(frame.pict_type)},
+                            frame.pkt_size,
+                            frame.format,
+                            frame.pts,
+                            frame.key_frame,
+                            frame.coded_picture_number,
+                        });
 
-            while (true) {
-                log.info("recv frame", .{});
-                const recv_frame_ret = c.avcodec_receive_frame(self.ctx.codec, frame);
-                if (recv_frame_ret == avError(.AGAIN)) break else try maybeAvError(recv_frame_ret);
+                        if (frame.format != c.AV_PIX_FMT_YUV420P) {
+                            log.err("invalid pixel format, expected yuv420p", .{});
+                            return error.InvalidPixelFormat;
+                        }
 
-                // this frame contains YUV data. we must convert it to rgb24
+                        // frame contains YUV data. we must convert it to rgb24
+                        try maybeAvError(c.sws_scale(
+                            self.ctx.pixfmt,
+                            &frame.data,
+                            &frame.linesize,
+                            @as(c_int, 0),
+                            self.ctx.codec.height,
+                            &self.fullscreen_rgb_pic.frame.data,
+                            &self.fullscreen_rgb_pic.frame.linesize,
+                        ));
 
-                // from fullscreen_rgb_pic, spit slices
-                for (self.state.slices.items) |slice| {
-                    log.info("add frame flags", .{});
-                    try maybeAvError(
-                        c.av_buffersrc_add_frame_flags(slice.filter.source, self.fullscreen_rgb_pic.frame, c.AV_BUFFERSRC_FLAG_KEEP_REF),
-                    );
+                        // from fullscreen_rgb_pic, spit slices
+                        for (self.state.slices.items) |slice| {
+                            log.info("add frame flags", .{});
+                            try maybeAvError(
+                                c.av_buffersrc_add_frame_flags(slice.filter.source, self.fullscreen_rgb_pic.frame, c.AV_BUFFERSRC_FLAG_KEEP_REF),
+                            );
 
-                    while (true) {
-                        log.info("buffersink get frame", .{});
-                        const sink_frame_ret = c.av_buffersink_get_frame(slice.filter.sink, slice.output_pic.frame);
-                        if (sink_frame_ret == avError(.AGAIN)) break else try maybeAvError(sink_frame_ret);
+                            while (true) {
+                                log.info("buffersink get frame", .{});
+                                const sink_frame_ret = c.av_buffersink_get_frame(slice.filter.sink, slice.output_pic.frame);
+                                if (sink_frame_ret == avError(.AGAIN)) break else try maybeAvError(sink_frame_ret);
 
-                        // from the frame, write to output lovr image ptr
+                                // from the frame, write to output lovr image ptr
 
-                        log.info("mem copy", .{});
-                        std.mem.copy(
-                            u8,
-                            slice.output_image[0..slice.output_pic.size],
-                            slice.output_pic.buffer[0..slice.output_pic.size],
-                        );
+                                log.info("mem copy", .{});
+                                std.mem.copy(
+                                    u8,
+                                    slice.output_image[0..slice.output_pic.size],
+                                    slice.output_pic.buffer[0..slice.output_pic.size],
+                                );
+                            }
+                        }
                     }
                 }
             }
