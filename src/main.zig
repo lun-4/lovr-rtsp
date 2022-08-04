@@ -1,6 +1,7 @@
 const std = @import("std");
+const main2 = @import("main_v2.zig");
 
-const c = @cImport({
+pub const c = @cImport({
     @cInclude("stdio.h");
     @cInclude("stdlib.h");
     @cInclude("string.h");
@@ -14,6 +15,10 @@ const c = @cImport({
     @cInclude("libavformat/avformat.h");
     @cInclude("libavformat/avio.h");
     @cInclude("libswscale/swscale.h");
+    @cInclude("libavfilter/avfilter.h");
+    @cInclude("libavfilter/buffersrc.h");
+    @cInclude("libavfilter/buffersink.h");
+    @cInclude("libavutil/opt.h");
 });
 const av_error_codes = [_]c_int{
     c.AVERROR_BSF_NOT_FOUND,
@@ -404,15 +409,25 @@ const funny_lib = [_]c.luaL_Reg{
     c.luaL_Reg{ .name = "open", .func = funny_open },
     c.luaL_Reg{ .name = "frameLoop", .func = rtsp_frame_loop_wrapper },
     c.luaL_Reg{ .name = "stop", .func = rtsp_stop_wrapper },
+
+    // v2 api
+    c.luaL_Reg{ .name = "create", .func = main2.create },
+    c.luaL_Reg{ .name = "open_v2", .func = main2.open },
+    c.luaL_Reg{ .name = "addSlice", .func = main2.addSlice },
+    c.luaL_Reg{ .name = "runMainLoop", .func = main2.runMainLoop },
+
+    // marker to stop the list here lol c moment
     c.luaL_Reg{ .name = null, .func = null },
 };
 
-export fn luaopen_rtsp(L: ?*c.lua_State) c_int {
+// TODO rename back to luaopen_rtsp()
+export fn luaopen_rtsp2(L: ?*c.lua_State) c_int {
     open_mutex.lock();
     defer open_mutex.unlock();
 
     _ = c.avformat_network_init();
     _ = c.luaL_newmetatable(L, "funny_stream");
+    _ = c.luaL_newmetatable(L, "rtsp_stream");
     c.luaL_register(L, "rtsp", &funny_lib);
 
     return 1;
