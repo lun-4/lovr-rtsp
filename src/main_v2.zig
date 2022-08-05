@@ -142,11 +142,13 @@ const Pic = extern struct {
     const Self = @This();
 
     fn create(codec: PicCodec, width: usize, height: usize) !Self {
-        var actual_codec = switch (codec) {
+        var pixel_format = switch (codec) {
             .yuv => c.AV_PIX_FMT_RGB24,
             .rgb => c.AV_PIX_FMT_RGB24,
         };
-        const pic_size = c.avpicture_get_size(actual_codec, @intCast(c_int, width), @intCast(c_int, height));
+
+        const pic_size = c.avpicture_get_size(pixel_format, @intCast(c_int, width), @intCast(c_int, height));
+        log.info("pic size {d} {d} = {d}", .{ width, height, pic_size });
         const buffer = @ptrCast(
             [*]u8,
             @alignCast(
@@ -154,20 +156,32 @@ const Pic = extern struct {
                 c.av_malloc(@bitCast(usize, @as(c_long, pic_size))).?,
             ),
         );
-        const pic = c.av_frame_alloc();
-        try maybeAvError(c.avpicture_fill(
-            @ptrCast(*c.AVPicture, pic),
+        const frame: *c.AVFrame = c.av_frame_alloc().?;
+        frame.width = @intCast(c_int, width);
+        frame.height = @intCast(c_int, height);
+        frame.format = pixel_format;
+
+        try maybeAvError(c.av_image_fill_arrays(
+            &frame.data,
+            &frame.linesize,
             buffer,
-            actual_codec,
+            pixel_format,
             @intCast(c_int, width),
             @intCast(c_int, height),
+            1,
         ));
+
+        log.info("frame resolution {d} {d}", .{ frame.width, frame.height });
+        if (frame.width != width or frame.height != height) {
+            log.err("expected {d}x{d}, created {d}x{d}", .{ width, height, frame.width, frame.height });
+            return error.UnexpectedFrameResolution;
+        }
 
         return Self{
             .codec = codec,
             .size = @intCast(usize, pic_size),
             .buffer = buffer,
-            .frame = pic,
+            .frame = frame,
         };
     }
 };
@@ -198,6 +212,7 @@ pub const Stream = extern struct {
     /// Will be converted from yuv_pic directly.
     /// Contains full screen.
     fullscreen_rgb_pic: Pic,
+    fullscreen_rgb_output: ?[*]u8,
 
     const Self = @This();
 
@@ -276,8 +291,14 @@ pub const Stream = extern struct {
             return error.SwsFail;
         };
 
+        std.debug.assert(self.ctx.codec.width > 0);
+        std.debug.assert(self.ctx.codec.height > 0);
+
         self.yuv_pic = try Pic.create(.yuv, @intCast(usize, self.ctx.codec.width), @intCast(usize, self.ctx.codec.height));
         self.fullscreen_rgb_pic = try Pic.create(.rgb, @intCast(usize, self.ctx.codec.width), @intCast(usize, self.ctx.codec.height));
+
+        std.debug.assert(self.fullscreen_rgb_pic.frame.width > 0);
+        std.debug.assert(self.fullscreen_rgb_pic.frame.height > 0);
     }
 
     pub fn addSlice(self: *Self, offset: [2]usize, size: [2]usize, output_image_pointer: [*]u8) !void {
@@ -300,29 +321,32 @@ pub const Stream = extern struct {
             .{
                 self.ctx.codec.width,
                 self.ctx.codec.height,
-                self.ctx.codec.pix_fmt,
+                c.AV_PIX_FMT_RGB24,
                 time_base.num,
                 time_base.den,
                 self.ctx.codec.sample_aspect_ratio.num,
                 self.ctx.codec.sample_aspect_ratio.den,
             },
         );
+        log.info("source {s}", .{source_args});
         try maybeAvError(
-            c.avfilter_graph_create_filter(&source, c.avfilter_get_by_name("buffer"), null, @ptrCast([*c]u8, source_args.ptr), null, graph),
+            c.avfilter_graph_create_filter(&source, c.avfilter_get_by_name("buffer").?, null, @ptrCast([*c]u8, source_args.ptr), null, graph),
         );
+        std.debug.assert(source != null);
 
         // filter sink (our rgb24 pic)
 
         log.info("set filter sink", .{});
         var sink: ?*c.AVFilterContext = null;
         try maybeAvError(
-            c.avfilter_graph_create_filter(&sink, c.avfilter_get_by_name("buffersink"), null, null, null, graph),
+            c.avfilter_graph_create_filter(&sink, c.avfilter_get_by_name("buffersink").?, null, null, null, graph),
         );
-        var pix_fmts = [_]c.AVPixelFormat{c.AV_PIX_FMT_RGB24};
-        //try maybeAvError(c.av_opt_set_int_list(sink, "pix_fmts", pix_fmts, c.AV_PIX_FMT_NONE, c.AV_OPT_SEARCH_CHILDREN));
-        try maybeAvError(
-            c.av_opt_set_bin(sink, "pix_fmts", std.mem.asBytes(&pix_fmts), @sizeOf(c.AVPixelFormat), c.AV_OPT_SEARCH_CHILDREN),
-        );
+        //var pix_fmts = [_]c.AVPixelFormat{c.AV_PIX_FMT_RGB24};
+        ////try maybeAvError(c.av_opt_set_int_list(sink, "pix_fmts", pix_fmts, c.AV_PIX_FMT_NONE, c.AV_OPT_SEARCH_CHILDREN));
+        //try maybeAvError(
+        //    c.av_opt_set_bin(sink, "pix_fmts", std.mem.asBytes(&pix_fmts), @sizeOf(c.AVPixelFormat), c.AV_OPT_SEARCH_CHILDREN),
+        //);
+        std.debug.assert(sink != null);
 
         // crop filter
         log.info("set filter crop", .{});
@@ -336,6 +360,7 @@ pub const Stream = extern struct {
         try maybeAvError(
             c.avfilter_graph_create_filter(&crop, c.avfilter_get_by_name("crop").?, null, @ptrCast([*c]u8, args.ptr), null, graph),
         );
+        std.debug.assert(crop != null);
 
         // source -> crop -> sink
         try maybeAvError(c.avfilter_link(source, 0, crop, 0));
@@ -354,12 +379,20 @@ pub const Stream = extern struct {
         });
     }
 
+    pub fn addDebugFrame(self: *Self, output_image_pointer: [*]u8) !void {
+        self.fullscreen_rgb_output = output_image_pointer;
+    }
+
     pub fn runMainLoop(self: Self) !void {
         var packet: *c.AVPacket = c.av_packet_alloc().?;
         var frame: *c.AVFrame = c.av_frame_alloc().?;
+        frame.width = @intCast(c_int, self.ctx.codec.width);
+        frame.height = @intCast(c_int, self.ctx.codec.height);
+        frame.format = c.AV_PIX_FMT_YUV420P;
 
         while (true) {
             defer c.av_packet_unref(packet);
+            defer c.av_frame_unref(frame);
 
             try maybeAvError(c.av_read_frame(self.ctx.format, packet));
 
@@ -403,9 +436,17 @@ pub const Stream = extern struct {
                             &self.fullscreen_rgb_pic.frame.linesize,
                         ));
 
+                        //if (self.fullscreen_rgb_output) |out_ptr| {
+                        //    std.mem.copy(
+                        //        u8,
+                        //        out_ptr[0..self.fullscreen_rgb_pic.size],
+                        //        self.fullscreen_rgb_pic.buffer[0..self.fullscreen_rgb_pic.size],
+                        //    );
+                        //}
+
                         // from fullscreen_rgb_pic, spit slices
                         for (self.state.slices.items) |slice| {
-                            log.info("add frame flags", .{});
+                            log.info("add frame flags {d} {d}", .{ self.fullscreen_rgb_pic.frame.height, self.fullscreen_rgb_pic.frame.width });
                             try maybeAvError(
                                 c.av_buffersrc_add_frame_flags(slice.filter.source, self.fullscreen_rgb_pic.frame, c.AV_BUFFERSRC_FLAG_KEEP_REF),
                             );
@@ -414,6 +455,7 @@ pub const Stream = extern struct {
                                 log.info("buffersink get frame", .{});
                                 const sink_frame_ret = c.av_buffersink_get_frame(slice.filter.sink, slice.output_pic.frame);
                                 if (sink_frame_ret == avError(.AGAIN)) break else try maybeAvError(sink_frame_ret);
+                                defer c.av_frame_unref(slice.output_pic.frame);
 
                                 // from the frame, write to output lovr image ptr
 
@@ -451,6 +493,7 @@ pub export fn create(arg_L: ?*c.lua_State) callconv(.C) c_int {
     stream.* = Stream{
         .yuv_pic = undefined,
         .fullscreen_rgb_pic = undefined,
+        .fullscreen_rgb_output = null,
         .ctx = undefined,
         .video_stream_index = 0,
         .state = state,
@@ -513,6 +556,35 @@ pub fn addSlice(arg_L: ?*c.lua_State) callconv(.C) c_int {
     // call
 
     stream.addSlice([_]usize{ offset_x, offset_y }, [_]usize{ size_x, size_y }, blob_ptr) catch |err| {
+        log.err("error happened shit {s}", .{@errorName(err)});
+        if (@errorReturnTrace()) |trace| {
+            std.debug.dumpStackTrace(trace.*);
+        }
+        c.lua_pushstring(L, "error happened inside native loop");
+        _ = c.lua_error(L);
+        return 1;
+    };
+    return 0;
+}
+
+pub fn addDebugFrame(arg_L: ?*c.lua_State) callconv(.C) c_int {
+    var L = arg_L.?;
+    if (c.lua_gettop(L) != @as(c_int, 2)) {
+        return c.luaL_error(L, "expecting exactly 2 arguments");
+    }
+
+    const stream_unusable = c.luaL_checkudata(L, @as(c_int, 1), "rtsp_stream");
+    var stream = @ptrCast(
+        *Stream,
+        @alignCast(std.meta.alignment(Stream), stream_unusable.?),
+    );
+
+    // args
+    var blob_ptr = @ptrCast([*]u8, c.lua_touserdata(L, 2) orelse @panic("invalid blob ptr"));
+
+    // call
+
+    stream.addDebugFrame(blob_ptr) catch |err| {
         log.err("error happened shit {s}", .{@errorName(err)});
         if (@errorReturnTrace()) |trace| {
             std.debug.dumpStackTrace(trace.*);

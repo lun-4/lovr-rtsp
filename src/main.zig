@@ -19,6 +19,7 @@ pub const c = @cImport({
     @cInclude("libavfilter/buffersrc.h");
     @cInclude("libavfilter/buffersink.h");
     @cInclude("libavutil/opt.h");
+    @cInclude("libavutil/imgutils.h");
 });
 const av_error_codes = [_]c_int{
     c.AVERROR_BSF_NOT_FOUND,
@@ -414,6 +415,7 @@ const funny_lib = [_]c.luaL_Reg{
     c.luaL_Reg{ .name = "create", .func = main2.create },
     c.luaL_Reg{ .name = "open_v2", .func = main2.open },
     c.luaL_Reg{ .name = "addSlice", .func = main2.addSlice },
+    c.luaL_Reg{ .name = "addDebugFrame", .func = main2.addDebugFrame },
     c.luaL_Reg{ .name = "runMainLoop", .func = main2.runMainLoop },
 
     // marker to stop the list here lol c moment
@@ -426,6 +428,7 @@ export fn luaopen_rtsp2(L: ?*c.lua_State) c_int {
     defer open_mutex.unlock();
 
     _ = c.avformat_network_init();
+    //_ = c.av_log_set_level(c.AV_LOG_DEBUG);
     _ = c.luaL_newmetatable(L, "funny_stream");
     _ = c.luaL_newmetatable(L, "rtsp_stream");
     c.luaL_register(L, "rtsp", &funny_lib);
