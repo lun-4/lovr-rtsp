@@ -422,13 +422,14 @@ const funny_lib = [_]c.luaL_Reg{
     c.luaL_Reg{ .name = null, .func = null },
 };
 
-// TODO rename back to luaopen_rtsp()
-export fn luaopen_rtsp2(L: ?*c.lua_State) c_int {
+const log = std.log.scoped(.sex);
+
+export fn luaopen_rtsp(L: ?*c.lua_State) c_int {
     open_mutex.lock();
     defer open_mutex.unlock();
 
     _ = c.avformat_network_init();
-    //_ = c.av_log_set_level(c.AV_LOG_DEBUG);
+    _ = c.av_log_set_level(c.AV_LOG_DEBUG);
     _ = c.luaL_newmetatable(L, "funny_stream");
     _ = c.luaL_newmetatable(L, "rtsp_stream");
     c.luaL_register(L, "rtsp", &funny_lib);

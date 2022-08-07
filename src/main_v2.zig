@@ -206,13 +206,11 @@ pub const Stream = extern struct {
 
     /// Allocated YUV frame.
     /// Will be written to as part of the main loop.
-    yuv_pic: Pic,
-
     /// Allocated RGB24 frame.
-    /// Will be converted from yuv_pic directly.
+    /// Will be converted from an YUV frame in main loop.
     /// Contains full screen.
     fullscreen_rgb_pic: Pic,
-    fullscreen_rgb_output: ?[*]u8,
+    fullscreen_rgb_output: ?[*]u8 = null,
 
     const Self = @This();
 
@@ -231,6 +229,7 @@ pub const Stream = extern struct {
         var opts: ?*c.AVDictionary = null;
         try maybeAvError(c.av_dict_set(&opts, "reorder_queue_size", "100000", 0));
 
+        log.info("open input", .{});
         if (c.avformat_open_input(&context_cptr, url.ptr, null, &opts) != @as(c_int, 0)) {
             return error.OpenInputError;
         }
@@ -239,6 +238,7 @@ pub const Stream = extern struct {
         context = @ptrCast(*c.AVFormatContext, context_cptr);
         self.ctx.format = context;
 
+        log.info("stream info", .{});
         if (c.avformat_find_stream_info(context, null) < 0) {
             return error.FindStreamError;
         }
@@ -256,16 +256,20 @@ pub const Stream = extern struct {
         self.video_stream_index = video_stream_index;
 
         //var inner_loop_context = c.avformat_alloc_context();
-        try maybeAvError(c.av_read_play(context));
+        log.info("av read play", .{});
+        // try maybeAvError(c.av_read_play(context));
+        log.info("codec ctx get default", .{});
         try maybeAvError(c.avcodec_get_context_defaults3(codec_context_cptr, codec));
         codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
 
         const stream_codec_context = context.streams[@intCast(usize, video_stream_index)].*.codec.?;
         //const actual_stream_codec = stream_codec_context.*.codec.?;
+        log.info("codec copy ctx", .{});
         try maybeAvError(c.avcodec_copy_context(codec_context_cptr, stream_codec_context));
         codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
         self.ctx.codec = codec_context;
 
+        log.info("codec open2", .{});
         try maybeAvError(c.avcodec_open2(self.ctx.codec, codec, null));
 
         // processing graph
@@ -294,7 +298,6 @@ pub const Stream = extern struct {
         std.debug.assert(self.ctx.codec.width > 0);
         std.debug.assert(self.ctx.codec.height > 0);
 
-        self.yuv_pic = try Pic.create(.yuv, @intCast(usize, self.ctx.codec.width), @intCast(usize, self.ctx.codec.height));
         self.fullscreen_rgb_pic = try Pic.create(.rgb, @intCast(usize, self.ctx.codec.width), @intCast(usize, self.ctx.codec.height));
 
         std.debug.assert(self.fullscreen_rgb_pic.frame.width > 0);
@@ -436,13 +439,14 @@ pub const Stream = extern struct {
                             &self.fullscreen_rgb_pic.frame.linesize,
                         ));
 
-                        //if (self.fullscreen_rgb_output) |out_ptr| {
-                        //    std.mem.copy(
-                        //        u8,
-                        //        out_ptr[0..self.fullscreen_rgb_pic.size],
-                        //        self.fullscreen_rgb_pic.buffer[0..self.fullscreen_rgb_pic.size],
-                        //    );
-                        //}
+                        if (self.fullscreen_rgb_output) |out_ptr| {
+                            log.info("rgb copy", .{});
+                            std.mem.copy(
+                                u8,
+                                out_ptr[0..self.fullscreen_rgb_pic.size],
+                                self.fullscreen_rgb_pic.buffer[0..self.fullscreen_rgb_pic.size],
+                            );
+                        }
 
                         // from fullscreen_rgb_pic, spit slices
                         for (self.state.slices.items) |slice| {
@@ -491,7 +495,6 @@ pub export fn create(arg_L: ?*c.lua_State) callconv(.C) c_int {
         .slices = SliceList.init(allocator),
     };
     stream.* = Stream{
-        .yuv_pic = undefined,
         .fullscreen_rgb_pic = undefined,
         .fullscreen_rgb_output = null,
         .ctx = undefined,
