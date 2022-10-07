@@ -9,8 +9,8 @@ const c_args = [_][]const u8{
 
 pub fn build(b: *std.build.Builder) void {
     const is_android = b.option(bool, "android", "building for the quest 2") orelse false;
-    const android_ndk = b.option([]const u8, "android-ndk", "building for the quest 2") orelse if (is_android) @panic("need android ndk") else null;
-    const luajit_path = b.option([]const u8, "luajit", "path to luajit target binary (required if cross compiling to quest 2)") orelse if (is_android) @panic("need luajit path") else null;
+    const android_ndk: ?[]const u8 = b.option([]const u8, "android-ndk", "building for the quest 2") orelse if (is_android) @panic("need android ndk") else null;
+    const luajit_path: ?[]const u8 = b.option([]const u8, "luajit", "path to luajit target binary (required if cross compiling to quest 2)") orelse if (is_android) @panic("need luajit path") else null;
 
     var target: std.zig.CrossTarget = undefined;
 
@@ -37,6 +37,7 @@ pub fn build(b: *std.build.Builder) void {
     lib.setTarget(target);
     lib.setBuildMode(mode);
     lib.install();
+    lib.use_stage1 = true;
 
     lib.addCSourceFile("src/funny.c", &c_args);
     if (!is_android) {
