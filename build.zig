@@ -42,7 +42,7 @@ pub fn build(b: *std.build.Builder) void {
     lib.addCSourceFile("src/funny.c", &c_args);
     if (!is_android) {
         lib.linkLibC();
-        lib.addIncludeDir("/usr/include/lua5.1");
+        lib.addIncludePath("/usr/include/lua5.1");
         lib.linkSystemLibrary("lua5.1");
         lib.linkSystemLibrary("avformat");
         lib.linkSystemLibrary("avutil");
@@ -73,12 +73,12 @@ pub fn build(b: *std.build.Builder) void {
         lib.defineCMacro("ANDROID", null);
         b.sysroot = sysroot;
         lib.setLibCFile(std.build.FileSource{ .path = "./android_libc.txt" });
-        lib.addIncludeDir(include_generic);
-        lib.addIncludeDir(include_arch_dependent);
+        lib.addIncludePath(include_generic);
+        lib.addIncludePath(include_arch_dependent);
         lib.linkLibC();
 
-        lib.addIncludeDir("/usr/include/lua5.1");
-        lib.addIncludeDir("./q2_include");
+        lib.addIncludePath("/usr/include/lua5.1");
+        lib.addIncludePath("./q2_include");
 
         lib.linkSystemLibrary("c");
         lib.linkSystemLibrary("./q2_lib/libavcodec.so");
@@ -87,9 +87,9 @@ pub fn build(b: *std.build.Builder) void {
         lib.linkSystemLibrary("./q2_lib/libswresample.so");
         lib.linkSystemLibrary("./q2_lib/libswscale.so");
 
-        lib.addLibPath(std.fs.path.dirname(luajit_path.?).?);
+        lib.addLibraryPath(std.fs.path.dirname(luajit_path.?).?);
         lib.linkSystemLibrary("luajit");
-        lib.addLibPath(libgcc_lib_path);
+        lib.addLibraryPath(libgcc_lib_path);
         lib.linkSystemLibrary("gcc");
     }
 

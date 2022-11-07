@@ -215,8 +215,6 @@ pub const Stream = extern struct {
     const Self = @This();
 
     pub fn open(self: *Self, url: [:0]const u8) !void {
-        _ = self;
-
         var context_cptr = c.avformat_alloc_context().?;
         var context = @ptrCast(*c.AVFormatContext, context_cptr);
 
