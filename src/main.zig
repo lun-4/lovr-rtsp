@@ -292,7 +292,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     return 1;
 }
 
-fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: [*]u8) !f64 {
+fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob: []u8) !f64 {
     var timer = try std.time.Timer.start();
 
     if (c.av_read_frame(funny_stream_1.*.context, &funny_stream_1.*.loop_ctx.packet) < @as(c_int, 0)) {
@@ -330,7 +330,14 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob_ptr: 
             );
 
             const picbuf_size = @bitCast(c_ulong, @as(c_long, funny_stream_1.*.loop_ctx.size2));
-            std.mem.copy(u8, blob_ptr[0..picbuf_size], funny_stream_1.*.loop_ctx.picture_buf2[0..picbuf_size]);
+            std.debug.assert(blob.len == picbuf_size);
+            logger.info("blob bytes {x}", .{
+                std.fmt.fmtSliceHexLower(blob[0..30]),
+            });
+            logger.info("frame bytes {x}", .{
+                std.fmt.fmtSliceHexLower(funny_stream_1.*.loop_ctx.picture_buf2[0..30]),
+            });
+            std.mem.copy(u8, blob, funny_stream_1.*.loop_ctx.picture_buf2[0..picbuf_size]);
         }
     }
     //c.av_free_packet(&funny_stream_1.*.loop_ctx.packet);
@@ -373,9 +380,14 @@ export fn rtsp_frame_loop_wrapper(arg_L: ?*c.lua_State) callconv(.C) c_int {
 const FPS_TARGET: f64 = 45;
 const FPS_BUDGET: f64 = (1.0 / FPS_TARGET);
 
+const Blob = struct {
+    ptr: [*]u8,
+    len: usize,
+};
+
 fn rtsp_frame_loop(L: *c.lua_State) !c_int {
-    if (c.lua_gettop(L) != @as(c_int, 2)) {
-        return c.luaL_error(L, "expecting exactly 2 arguments");
+    if (c.lua_gettop(L) != @as(c_int, 3)) {
+        return c.luaL_error(L, "expecting exactly 3 arguments");
     }
 
     const rtsp_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");
@@ -384,17 +396,21 @@ fn rtsp_frame_loop(L: *c.lua_State) !c_int {
         @alignCast(std.meta.alignment(funny_stream_t), rtsp_stream_voidptr.?),
     );
 
-    var blob_ptr: ?[*]u8 = @ptrCast(?[*]u8, c.lua_touserdata(L, @as(c_int, 2)));
+    var unchecked_blob_ptr: ?[*]u8 = @ptrCast(?[*]u8, c.lua_touserdata(L, @as(c_int, 2)));
+    const blob_ptr_size: usize = @floatToInt(usize, c.luaL_checknumber(L, 3));
+    logger.info("blob ptr size {d}", .{blob_ptr_size});
+
+    const blob = unchecked_blob_ptr.?[0..blob_ptr_size];
 
     while (true) {
         if (rtsp_stream.stop) {
-            std.log.info("stream loop stopping", .{});
+            logger.info("stream loop stopping", .{});
             break;
         }
 
-        const time_receiving_frame: f64 = try rtsp_fetch_frame(L, rtsp_stream, blob_ptr.?);
+        const time_receiving_frame: f64 = try rtsp_fetch_frame(L, rtsp_stream, blob);
         const remaining_time = FPS_BUDGET - time_receiving_frame;
-        //std.log.info("timings {d:.6} {d:.6} {d:.6}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
+        std.log.info("timings {d:.6} {d:.6} {d:.6}", .{ FPS_BUDGET, time_receiving_frame, remaining_time });
 
         if (remaining_time > 0) {
             // good case: we decoded fast
@@ -422,14 +438,12 @@ const funny_lib = [_]c.luaL_Reg{
     c.luaL_Reg{ .name = null, .func = null },
 };
 
-const log = std.log.scoped(.sex);
-
 export fn luaopen_rtsp(L: ?*c.lua_State) c_int {
     open_mutex.lock();
     defer open_mutex.unlock();
 
     _ = c.avformat_network_init();
-    _ = c.av_log_set_level(c.AV_LOG_DEBUG);
+    //_ = c.av_log_set_level(c.AV_LOG_DEBUG);
     _ = c.luaL_newmetatable(L, "funny_stream");
     _ = c.luaL_newmetatable(L, "rtsp_stream");
     c.luaL_register(L, "rtsp", &funny_lib);
