@@ -213,7 +213,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
         codec_context.pix_fmt,
         codec_context.width,
         codec_context.height,
-        c.AV_PIX_FMT_RGB24,
+        c.AV_PIX_FMT_RGBA,
         @as(c_int, 4),
         null,
         null,
@@ -245,7 +245,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     ));
 
     const pic2_size = c.avpicture_get_size(
-        c.AV_PIX_FMT_RGB24,
+        c.AV_PIX_FMT_RGBA,
         codec_context.width,
         codec_context.height,
     );
@@ -257,7 +257,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     try possible_av_error(L, c.avpicture_fill(
         @ptrCast(*c.AVPicture, pic2),
         pic2_buf,
-        c.AV_PIX_FMT_RGB24,
+        c.AV_PIX_FMT_RGBA,
         codec_context.width,
         codec_context.height,
     ));
