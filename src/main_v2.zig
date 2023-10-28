@@ -147,18 +147,17 @@ const Pic = extern struct {
             .rgb => c.AV_PIX_FMT_RGB24,
         };
 
-        const pic_size = c.avpicture_get_size(pixel_format, @intCast(c_int, width), @intCast(c_int, height));
+        const pic_size = c.avpicture_get_size(pixel_format, @as(c_int, @intCast(width)), @as(c_int, @intCast(height)));
         log.info("pic size {d} {d} = {d}", .{ width, height, pic_size });
-        const buffer = @ptrCast(
-            [*]u8,
-            @alignCast(
-                std.meta.alignment(u8),
-                c.av_malloc(@bitCast(usize, @as(c_long, pic_size))).?,
-            ),
+        const buffer = @as(
+            [*]align(std.meta.alignment(u8)) u8,
+            @ptrCast(@alignCast(
+                c.av_malloc(@as(usize, @bitCast(@as(c_long, pic_size)))).?,
+            )),
         );
         const frame: *c.AVFrame = c.av_frame_alloc().?;
-        frame.width = @intCast(c_int, width);
-        frame.height = @intCast(c_int, height);
+        frame.width = @as(c_int, @intCast(width));
+        frame.height = @as(c_int, @intCast(height));
         frame.format = pixel_format;
 
         try maybeAvError(c.av_image_fill_arrays(
@@ -166,8 +165,8 @@ const Pic = extern struct {
             &frame.linesize,
             buffer,
             pixel_format,
-            @intCast(c_int, width),
-            @intCast(c_int, height),
+            @as(c_int, @intCast(width)),
+            @as(c_int, @intCast(height)),
             1,
         ));
 
@@ -179,7 +178,7 @@ const Pic = extern struct {
 
         return Self{
             .codec = codec,
-            .size = @intCast(usize, pic_size),
+            .size = @as(usize, @intCast(pic_size)),
             .buffer = buffer,
             .frame = frame,
         };
@@ -194,7 +193,7 @@ const ContextHolder = extern struct {
 };
 
 fn avError(errno_value: std.os.E) c_int {
-    return c.AVERROR(@intCast(c_int, @enumToInt(errno_value)));
+    return c.AVERROR(@as(c_int, @intCast(@intFromEnum(errno_value))));
 }
 
 pub const Stream = extern struct {
@@ -216,13 +215,13 @@ pub const Stream = extern struct {
 
     pub fn open(self: *Self, url: [:0]const u8) !void {
         var context_cptr = c.avformat_alloc_context().?;
-        var context = @ptrCast(*c.AVFormatContext, context_cptr);
+        var context = @as(*c.AVFormatContext, @ptrCast(context_cptr));
 
         const codec =
-            c.avcodec_find_decoder(@bitCast(c_uint, c.AV_CODEC_ID_H264)) orelse return error.CodecNotFound;
+            c.avcodec_find_decoder(@as(c_uint, @bitCast(c.AV_CODEC_ID_H264))) orelse return error.CodecNotFound;
 
         var codec_context_cptr = c.avcodec_alloc_context3(codec).?;
-        var codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+        var codec_context = @as(*c.AVCodecContext, @ptrCast(codec_context_cptr));
 
         var opts: ?*c.AVDictionary = null;
         try maybeAvError(c.av_dict_set(&opts, "reorder_queue_size", "100000", 0));
@@ -233,7 +232,7 @@ pub const Stream = extern struct {
         }
 
         // set it again just in case avformat_open_input changed the pointer value!!!
-        context = @ptrCast(*c.AVFormatContext, context_cptr);
+        context = @as(*c.AVFormatContext, @ptrCast(context_cptr));
         self.ctx.format = context;
 
         log.info("stream info", .{});
@@ -258,13 +257,13 @@ pub const Stream = extern struct {
         // try maybeAvError(c.av_read_play(context));
         log.info("codec ctx get default", .{});
         try maybeAvError(c.avcodec_get_context_defaults3(codec_context_cptr, codec));
-        codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+        codec_context = @as(*c.AVCodecContext, @ptrCast(codec_context_cptr));
 
-        const stream_codec_context = context.streams[@intCast(usize, video_stream_index)].*.codec.?;
+        const stream_codec_context = context.streams[@as(usize, @intCast(video_stream_index))].*.codec.?;
         //const actual_stream_codec = stream_codec_context.*.codec.?;
         log.info("codec copy ctx", .{});
         try maybeAvError(c.avcodec_copy_context(codec_context_cptr, stream_codec_context));
-        codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+        codec_context = @as(*c.AVCodecContext, @ptrCast(codec_context_cptr));
         self.ctx.codec = codec_context;
 
         log.info("codec open2", .{});
@@ -296,7 +295,7 @@ pub const Stream = extern struct {
         std.debug.assert(self.ctx.codec.width > 0);
         std.debug.assert(self.ctx.codec.height > 0);
 
-        self.fullscreen_rgb_pic = try Pic.create(.rgb, @intCast(usize, self.ctx.codec.width), @intCast(usize, self.ctx.codec.height));
+        self.fullscreen_rgb_pic = try Pic.create(.rgb, @as(usize, @intCast(self.ctx.codec.width)), @as(usize, @intCast(self.ctx.codec.height)));
 
         std.debug.assert(self.fullscreen_rgb_pic.frame.width > 0);
         std.debug.assert(self.fullscreen_rgb_pic.frame.height > 0);
@@ -331,7 +330,7 @@ pub const Stream = extern struct {
         );
         log.info("source {s}", .{source_args});
         try maybeAvError(
-            c.avfilter_graph_create_filter(&source, c.avfilter_get_by_name("buffer").?, null, @ptrCast([*c]u8, source_args.ptr), null, graph),
+            c.avfilter_graph_create_filter(&source, c.avfilter_get_by_name("buffer").?, null, @as([*c]u8, @ptrCast(source_args.ptr)), null, graph),
         );
         std.debug.assert(source != null);
 
@@ -359,7 +358,7 @@ pub const Stream = extern struct {
 
         var crop: ?*c.AVFilterContext = null;
         try maybeAvError(
-            c.avfilter_graph_create_filter(&crop, c.avfilter_get_by_name("crop").?, null, @ptrCast([*c]u8, args.ptr), null, graph),
+            c.avfilter_graph_create_filter(&crop, c.avfilter_get_by_name("crop").?, null, @as([*c]u8, @ptrCast(args.ptr)), null, graph),
         );
         std.debug.assert(crop != null);
 
@@ -387,8 +386,8 @@ pub const Stream = extern struct {
     pub fn runMainLoop(self: Self) !void {
         var packet: *c.AVPacket = c.av_packet_alloc().?;
         var frame: *c.AVFrame = c.av_frame_alloc().?;
-        frame.width = @intCast(c_int, self.ctx.codec.width);
-        frame.height = @intCast(c_int, self.ctx.codec.height);
+        frame.width = @as(c_int, @intCast(self.ctx.codec.width));
+        frame.height = @as(c_int, @intCast(self.ctx.codec.height));
         frame.format = c.AV_PIX_FMT_YUV420P;
 
         while (true) {
@@ -479,10 +478,10 @@ pub const Stream = extern struct {
 pub export fn create(arg_L: ?*c.lua_State) callconv(.C) c_int {
     var L = arg_L.?;
 
-    var stream = @ptrCast(*Stream, @alignCast(std.meta.alignment(Stream), c.lua_newuserdata(
+    var stream = @as(*align(std.meta.alignment(Stream)) Stream, @ptrCast(@alignCast(c.lua_newuserdata(
         L,
         @sizeOf(Stream),
-    ) orelse @panic("failed to allocate stream userdata")));
+    ) orelse @panic("failed to allocate stream userdata"))));
     c.lua_getfield(L, -@as(c_int, 10000), "rtsp_stream");
     _ = c.lua_setmetatable(L, -@as(c_int, 2));
 
@@ -516,9 +515,9 @@ pub fn open(arg_L: ?*c.lua_State) callconv(.C) c_int {
     }
 
     const stream_unusable = c.luaL_checkudata(L, @as(c_int, 1), "rtsp_stream");
-    var stream = @ptrCast(
-        *Stream,
-        @alignCast(std.meta.alignment(Stream), stream_unusable.?),
+    var stream = @as(
+        *align(std.meta.alignment(Stream)) Stream,
+        @ptrCast(@alignCast(stream_unusable.?)),
     );
 
     const url = luaString(L, 2) orelse unreachable; // TODO error interface
@@ -542,17 +541,17 @@ pub fn addSlice(arg_L: ?*c.lua_State) callconv(.C) c_int {
     }
 
     const stream_unusable = c.luaL_checkudata(L, @as(c_int, 1), "rtsp_stream");
-    var stream = @ptrCast(
-        *Stream,
-        @alignCast(std.meta.alignment(Stream), stream_unusable.?),
+    var stream = @as(
+        *align(std.meta.alignment(Stream)) Stream,
+        @ptrCast(@alignCast(stream_unusable.?)),
     );
 
     // args
-    const offset_x = @intCast(usize, c.luaL_checkint(L, 2));
-    const offset_y = @intCast(usize, c.luaL_checkint(L, 3));
-    const size_x = @intCast(usize, c.luaL_checkint(L, 4));
-    const size_y = @intCast(usize, c.luaL_checkint(L, 5));
-    var blob_ptr = @ptrCast([*]u8, c.lua_touserdata(L, 6) orelse @panic("invalid blob ptr"));
+    const offset_x = @as(usize, @intCast(c.luaL_checkint(L, 2)));
+    const offset_y = @as(usize, @intCast(c.luaL_checkint(L, 3)));
+    const size_x = @as(usize, @intCast(c.luaL_checkint(L, 4)));
+    const size_y = @as(usize, @intCast(c.luaL_checkint(L, 5)));
+    var blob_ptr = @as([*]u8, @ptrCast(c.lua_touserdata(L, 6) orelse @panic("invalid blob ptr")));
 
     // call
 
@@ -575,13 +574,13 @@ pub fn addDebugFrame(arg_L: ?*c.lua_State) callconv(.C) c_int {
     }
 
     const stream_unusable = c.luaL_checkudata(L, @as(c_int, 1), "rtsp_stream");
-    var stream = @ptrCast(
-        *Stream,
-        @alignCast(std.meta.alignment(Stream), stream_unusable.?),
+    var stream = @as(
+        *align(std.meta.alignment(Stream)) Stream,
+        @ptrCast(@alignCast(stream_unusable.?)),
     );
 
     // args
-    var blob_ptr = @ptrCast([*]u8, c.lua_touserdata(L, 2) orelse @panic("invalid blob ptr"));
+    var blob_ptr = @as([*]u8, @ptrCast(c.lua_touserdata(L, 2) orelse @panic("invalid blob ptr")));
 
     // call
 
@@ -604,9 +603,9 @@ pub fn runMainLoop(arg_L: ?*c.lua_State) callconv(.C) c_int {
     }
 
     const stream_unusable = c.luaL_checkudata(L, @as(c_int, 1), "rtsp_stream");
-    var stream = @ptrCast(
-        *Stream,
-        @alignCast(std.meta.alignment(Stream), stream_unusable.?),
+    var stream = @as(
+        *align(std.meta.alignment(Stream)) Stream,
+        @ptrCast(@alignCast(stream_unusable.?)),
     );
 
     // call

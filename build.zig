@@ -31,18 +31,29 @@ pub fn build(b: *std.build.Builder) void {
 
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addSharedLibrary("rtsp", "src/main.zig", b.version(0, 0, 1));
-    lib.setTarget(target);
-    lib.setBuildMode(mode);
-    lib.install();
-    lib.use_stage1 = true;
+    const lib = b.addSharedLibrary(.{
+        .name = "rtsp",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .optimize = optimize,
+        .target = target,
+        .version = std.SemanticVersion{
+            .major = 0,
+            .minor = 0,
+            .patch = 0,
+        },
+    });
+    b.installArtifact(lib);
 
-    lib.addCSourceFile("src/funny.c", &c_args);
+    lib.addCSourceFile(.{
+        .file = .{ .path = "src/funny.c" },
+        .flags = &c_args,
+    });
+
     if (!is_android) {
         lib.linkLibC();
-        lib.addIncludePath("/usr/include/lua5.1");
+        lib.addIncludePath(.{ .path = "/usr/include/lua5.1" });
         lib.linkSystemLibrary("lua5.1");
         lib.linkSystemLibrary("avformat");
         lib.linkSystemLibrary("avutil");
@@ -73,12 +84,12 @@ pub fn build(b: *std.build.Builder) void {
         lib.defineCMacro("ANDROID", null);
         b.sysroot = sysroot;
         lib.setLibCFile(std.build.FileSource{ .path = "./android_libc.txt" });
-        lib.addIncludePath(include_generic);
-        lib.addIncludePath(include_arch_dependent);
+        lib.addIncludePath(.{ .path = include_generic });
+        lib.addIncludePath(.{ .path = include_arch_dependent });
         lib.linkLibC();
 
-        lib.addIncludePath("/usr/include/lua5.1");
-        lib.addIncludePath("./q2_include");
+        lib.addIncludePath(.{ .path = "/usr/include/lua5.1" });
+        lib.addIncludePath(.{ .path = "./q2_include" });
 
         lib.linkSystemLibrary("c");
         lib.linkSystemLibrary("./q2_lib/libavcodec.so");
@@ -87,15 +98,22 @@ pub fn build(b: *std.build.Builder) void {
         lib.linkSystemLibrary("./q2_lib/libswresample.so");
         lib.linkSystemLibrary("./q2_lib/libswscale.so");
 
-        lib.addLibraryPath(std.fs.path.dirname(luajit_path.?).?);
+        lib.addLibraryPath(.{ .path = std.fs.path.dirname(luajit_path.?).? });
         lib.linkSystemLibrary("luajit");
-        lib.addLibraryPath(libgcc_lib_path);
+        lib.addLibraryPath(.{ .path = libgcc_lib_path });
         lib.linkSystemLibrary("gcc");
     }
 
-    const main_tests = b.addTest("src/main.zig");
-    main_tests.setBuildMode(mode);
+    const exe_tests = b.addTest(
+        .{
+            .root_source_file = .{ .path = "src/main.zig" },
+            .optimize = optimize,
+            .target = target,
+        },
+    );
 
-    const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&main_tests.step);
+    const run_unit_tests = b.addRunArtifact(exe_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_unit_tests.step);
 }

@@ -151,15 +151,15 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     defer open_mutex.unlock();
 
     var context_cptr = c.avformat_alloc_context().?;
-    var context = @ptrCast(*c.AVFormatContext, context_cptr);
+    var context = @as(*c.AVFormatContext, @ptrCast(context_cptr));
 
-    const codec = c.avcodec_find_decoder(@bitCast(c_uint, c.AV_CODEC_ID_H264)) orelse {
+    const codec = c.avcodec_find_decoder(@as(c_uint, @bitCast(c.AV_CODEC_ID_H264))) orelse {
         c.lua_pushstring(L, "could not find h264 decoder");
         return c.lua_error(L);
     };
 
     var codec_context_cptr = c.avcodec_alloc_context3(codec).?;
-    var codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+    var codec_context = @as(*c.AVCodecContext, @ptrCast(codec_context_cptr));
 
     var opts: ?*c.AVDictionary = null;
     try possible_av_error(L, c.av_dict_set(&opts, "reorder_queue_size", "100000", 0));
@@ -171,7 +171,7 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     }
 
     // set it again just in case avformat_open_input changed the pointer value!!!
-    context = @ptrCast(*c.AVFormatContext, context_cptr);
+    context = @as(*c.AVFormatContext, @ptrCast(context_cptr));
 
     if (c.avformat_find_stream_info(context, null) < 0) {
         c.lua_pushstring(L, "c.avformat_find_stream_info error");
@@ -195,12 +195,12 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
     var inner_loop_context = c.avformat_alloc_context();
     try possible_av_error(L, c.av_read_play(context));
     try possible_av_error(L, c.avcodec_get_context_defaults3(codec_context_cptr, codec));
-    codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+    codec_context = @as(*c.AVCodecContext, @ptrCast(codec_context_cptr));
 
-    const stream_codec_context = context.streams[@intCast(usize, video_stream_index)].*.codec.?;
+    const stream_codec_context = context.streams[@as(usize, @intCast(video_stream_index))].*.codec.?;
     //const actual_stream_codec = stream_codec_context.*.codec.?;
     try possible_av_error(L, c.avcodec_copy_context(codec_context_cptr, stream_codec_context));
-    codec_context = @ptrCast(*c.AVCodecContext, codec_context_cptr);
+    codec_context = @as(*c.AVCodecContext, @ptrCast(codec_context_cptr));
 
     try possible_av_error(L, c.avcodec_open2(
         codec_context,
@@ -230,13 +230,22 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
         codec_context.width,
         codec_context.height,
     );
-    const pic1_buf = @ptrCast(
-        [*c]u8,
-        @alignCast(std.meta.alignment(u8), c.av_malloc(@bitCast(usize, @as(c_long, pic1_size)))),
+    const pic1_buf: [*c]align(std.meta.alignment(u8)) u8 =
+        @ptrCast(
+        @alignCast(
+            c.av_malloc(
+                @as(
+                    usize,
+                    @bitCast(
+                        @as(c_long, pic1_size),
+                    ),
+                ),
+            ),
+        ),
     );
     const pic1 = c.av_frame_alloc();
     try possible_av_error(L, c.avpicture_fill(
-        @ptrCast(*c.AVPicture, pic1),
+        @as(*c.AVPicture, @ptrCast(pic1)),
         pic1_buf,
         c.AV_PIX_FMT_YUV420P,
 
@@ -249,22 +258,22 @@ fn funny_open_wrapped(L: *c.lua_State, rtsp_url: [:0]const u8) !c_int {
         codec_context.width,
         codec_context.height,
     );
-    const pic2_buf = @ptrCast(
-        [*c]u8,
-        @alignCast(std.meta.alignment(u8), c.av_malloc(@bitCast(usize, @as(c_long, pic2_size)))),
+    const pic2_buf = @as(
+        [*c]align(std.meta.alignment(u8)) u8,
+        @ptrCast(@alignCast(c.av_malloc(@as(usize, @bitCast(@as(c_long, pic2_size)))))),
     );
     const pic2 = c.av_frame_alloc();
     try possible_av_error(L, c.avpicture_fill(
-        @ptrCast(*c.AVPicture, pic2),
+        @as(*c.AVPicture, @ptrCast(pic2)),
         pic2_buf,
         c.AV_PIX_FMT_RGBA,
         codec_context.width,
         codec_context.height,
     ));
 
-    var funny_stream_1: *funny_stream_t = @ptrCast(
-        *funny_stream_t,
-        @alignCast(std.meta.alignment(funny_stream_t), c.lua_newuserdata(L, @sizeOf(funny_stream_t)).?),
+    var funny_stream_1: *funny_stream_t = @as(
+        *align(std.meta.alignment(funny_stream_t)) funny_stream_t,
+        @ptrCast(@alignCast(c.lua_newuserdata(L, @sizeOf(funny_stream_t)).?)),
     );
     c.lua_getfield(L, -@as(c_int, 10000), "funny_stream");
     _ = c.lua_setmetatable(L, -@as(c_int, 2));
@@ -321,15 +330,15 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob: []u8
         if (check != @as(c_int, 0)) {
             _ = c.sws_scale(
                 funny_stream_1.*.img_convert_ctx,
-                @ptrCast([*c][*c]u8, @alignCast(std.meta.alignment([*c][*c]u8), &funny_stream_1.*.loop_ctx.pic.*.data)),
-                @ptrCast([*c]c_int, @alignCast(std.meta.alignment(c_int), &funny_stream_1.*.loop_ctx.pic.*.linesize)),
+                @as([*c][*c]align(std.meta.alignment([*c][*c]u8)) u8, @ptrCast(@alignCast(&funny_stream_1.*.loop_ctx.pic.*.data))),
+                @as([*c]align(std.meta.alignment(c_int)) c_int, @ptrCast(@alignCast(&funny_stream_1.*.loop_ctx.pic.*.linesize))),
                 @as(c_int, 0),
                 funny_stream_1.*.ccontext.*.height,
-                @ptrCast([*c][*c]u8, @alignCast(std.meta.alignment([*c][*c]u8), &funny_stream_1.*.loop_ctx.pic_rgb.*.data)),
-                @ptrCast([*c]c_int, @alignCast(std.meta.alignment(c_int), &funny_stream_1.*.loop_ctx.pic_rgb.*.linesize)),
+                @as([*c][*c]align(std.meta.alignment(u8)) u8, @ptrCast(@alignCast(&funny_stream_1.*.loop_ctx.pic_rgb.*.data))),
+                @as([*c]align(std.meta.alignment(c_int)) c_int, @ptrCast(@alignCast(&funny_stream_1.*.loop_ctx.pic_rgb.*.linesize))),
             );
 
-            const picbuf_size = @bitCast(c_ulong, @as(c_long, funny_stream_1.*.loop_ctx.size2));
+            const picbuf_size = @as(c_ulong, @bitCast(@as(c_long, funny_stream_1.*.loop_ctx.size2)));
             std.debug.assert(blob.len == picbuf_size);
             logger.info("blob bytes {x}", .{
                 std.fmt.fmtSliceHexLower(blob[0..30]),
@@ -343,7 +352,7 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob: []u8
     //c.av_free_packet(&funny_stream_1.*.loop_ctx.packet);
     c.av_init_packet(&funny_stream_1.*.loop_ctx.packet);
 
-    const elapsed: f64 = @intToFloat(f64, timer.read()) / @intToFloat(f64, std.time.ns_per_s);
+    const elapsed: f64 = @as(f64, @floatFromInt(timer.read())) / @as(f64, @floatFromInt(std.time.ns_per_s));
     return elapsed;
 }
 
@@ -354,9 +363,9 @@ export fn rtsp_stop_wrapper(arg_L: ?*c.lua_State) callconv(.C) c_int {
     }
 
     const rtsp_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");
-    var rtsp_stream: *funny_stream_t = @ptrCast(
-        *funny_stream_t,
-        @alignCast(std.meta.alignment(funny_stream_t), rtsp_stream_voidptr.?),
+    var rtsp_stream: *funny_stream_t = @as(
+        *align(std.meta.alignment(funny_stream_t)) funny_stream_t,
+        @ptrCast(@alignCast(rtsp_stream_voidptr.?)),
     );
 
     rtsp_stream.stop = true;
@@ -391,13 +400,13 @@ fn rtsp_frame_loop(L: *c.lua_State) !c_int {
     }
 
     const rtsp_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");
-    var rtsp_stream: *funny_stream_t = @ptrCast(
-        *funny_stream_t,
-        @alignCast(std.meta.alignment(funny_stream_t), rtsp_stream_voidptr.?),
+    var rtsp_stream: *funny_stream_t = @as(
+        *align(std.meta.alignment(funny_stream_t)) funny_stream_t,
+        @ptrCast(@alignCast(rtsp_stream_voidptr.?)),
     );
 
-    var unchecked_blob_ptr: ?[*]u8 = @ptrCast(?[*]u8, c.lua_touserdata(L, @as(c_int, 2)));
-    const blob_ptr_size: usize = @floatToInt(usize, c.luaL_checknumber(L, 3));
+    var unchecked_blob_ptr: ?[*]u8 = @as(?[*]u8, @ptrCast(c.lua_touserdata(L, @as(c_int, 2))));
+    const blob_ptr_size: usize = @as(usize, @intFromFloat(c.luaL_checknumber(L, 3)));
     logger.info("blob ptr size {d}", .{blob_ptr_size});
 
     const blob = unchecked_blob_ptr.?[0..blob_ptr_size];
