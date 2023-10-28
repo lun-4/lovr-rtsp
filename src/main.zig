@@ -118,9 +118,11 @@ const logger = std.log.scoped(.lovr_rtsp);
 
 fn possible_av_error(L: *c.lua_State, ret: c_int) !void {
     if (ret < 0) {
-        const maybe_av_error_name = libav_strerror(ret);
+        //const maybe_av_error_name = libav_strerror(ret);
+        const maybe_av_error_name = null;
+        std.log.err("av error: {d}", .{ret});
         if (maybe_av_error_name) |error_name| {
-            std.log.err("av error: {s}", .{error_name});
+            std.log.err("av error str: {s}", .{error_name});
         }
         c.lua_pushstring(L, "libav issue");
         _ = c.lua_error(L);
@@ -359,7 +361,7 @@ fn rtsp_fetch_frame(L: *c.lua_State, funny_stream_1: *funny_stream_t, blob: []u8
 export fn rtsp_stop_wrapper(arg_L: ?*c.lua_State) callconv(.C) c_int {
     var L = arg_L.?;
     if (c.lua_gettop(L) != @as(c_int, 2)) {
-        return c.luaL_error(L, "expecting exactly 2 arguments");
+        return c.luaL_error(L, "rtsp_stop_wrapper expecting exactly 2 arguments");
     }
 
     const rtsp_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");
@@ -396,7 +398,7 @@ const Blob = struct {
 
 fn rtsp_frame_loop(L: *c.lua_State) !c_int {
     if (c.lua_gettop(L) != @as(c_int, 3)) {
-        return c.luaL_error(L, "expecting exactly 3 arguments");
+        return c.luaL_error(L, "rtsp_frame_loop expecting exactly 3 arguments");
     }
 
     const rtsp_stream_voidptr = c.luaL_checkudata(L, @as(c_int, 1), "funny_stream");

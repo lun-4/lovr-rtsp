@@ -94,15 +94,20 @@ pub const funny_stream_t = extern struct {
 
 const log = std.log.scoped(.lovr_rtsp);
 
+fn avReturnError(ret: c_int) !void {
+    var buf: [512]u8 = undefined;
+    var buf_cstr = @as([*:0]u8, @ptrCast(&buf));
+    _ = c.av_strerror(ret, buf_cstr, 512);
+    var err = std.mem.span(buf_cstr);
+    log.err("libav returned {d}", .{ret});
+    log.err("av error: {s}", .{err});
+
+    return error.AvError;
+}
+
 fn maybeAvError(ret: c_int) !void {
     if (ret < 0) {
-        var buf: [512]u8 = undefined;
-        _ = c.av_strerror(ret, &buf, 512);
-        var err = std.mem.span(&buf);
-        log.err("libav returned {d}", .{ret});
-        log.err("av error: {s}", .{err});
-
-        return error.AvError;
+        try avReturnError(ret);
     }
 }
 
@@ -399,11 +404,10 @@ pub const Stream = extern struct {
             if (packet.stream_index == self.video_stream_index) {
                 var response = c.avcodec_send_packet(self.ctx.codec, packet);
                 if (response < 0) {
-                    var buf: [512]u8 = undefined;
-                    _ = c.av_strerror(response, &buf, 512);
-                    var err = std.mem.span(&buf);
-                    log.err("send packet error: {s}", .{err});
-                    return error.SendPacketError;
+                    avReturnError(response) catch {
+                        log.err("send packet error!!", .{});
+                        return error.SendPacketError;
+                    };
                 }
 
                 while (response >= 0) {
